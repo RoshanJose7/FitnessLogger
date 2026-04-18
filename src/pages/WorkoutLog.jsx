@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react'
-import { useNavigate } from 'react-router-dom'
-import { ChevronDown, CheckCircle2 } from 'lucide-react'
+import { ChevronDown, CheckCircle2, History } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { SESSION_TYPES } from '../lib/exercises'
 
@@ -15,13 +14,41 @@ function buildInitialSets(exercises) {
   return Object.fromEntries(exercises.map(ex => [ex, [{ ...EMPTY_SET }, { ...EMPTY_SET }, { ...EMPTY_SET }]]))
 }
 
+async function fetchPreviousSession(userId, sessionType) {
+  const { data: prev } = await supabase
+    .from('workout_sessions')
+    .select('id, date')
+    .eq('user_id', userId)
+    .eq('session_type', sessionType)
+    .lt('date', today())
+    .order('date', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+
+  if (!prev) return null
+
+  const { data: sets } = await supabase
+    .from('exercise_sets')
+    .select('*')
+    .eq('session_id', prev.id)
+    .order('set_number')
+
+  const grouped = {}
+  for (const s of sets || []) {
+    if (!grouped[s.exercise_name]) grouped[s.exercise_name] = []
+    grouped[s.exercise_name].push({ weight: s.weight, reps: s.reps })
+  }
+
+  return { date: prev.date, sets: grouped }
+}
+
 export default function WorkoutLog({ session }) {
-  const navigate = useNavigate()
-  const [step, setStep] = useState('pick') // 'pick' | 'log'
+  const [step, setStep] = useState('pick')
   const [sessionType, setSessionType] = useState(null)
   const [existingId, setExistingId] = useState(null)
   const [energyLevel, setEnergyLevel] = useState(3)
   const [sets, setSets] = useState({})
+  const [prevSession, setPrevSession] = useState(null)
   const [cardio, setCardio] = useState({ ...EMPTY_CARDIO })
   const [sessionNotes, setSessionNotes] = useState('')
   const [saving, setSaving] = useState(false)
@@ -35,6 +62,7 @@ export default function WorkoutLog({ session }) {
         .eq('user_id', session.user.id)
         .eq('date', today())
         .maybeSingle()
+
       if (data) {
         setExistingId(data.id)
         setSessionType(data.session_type)
@@ -42,15 +70,15 @@ export default function WorkoutLog({ session }) {
         setSessionNotes(data.notes || '')
         const config = SESSION_TYPES[data.session_type]
         setSets(buildInitialSets(config.exercises))
-        // load existing sets
-        const { data: existingSets } = await supabase
-          .from('exercise_sets')
-          .select('*')
-          .eq('session_id', data.id)
-          .order('set_number')
-        if (existingSets?.length) {
+
+        const [existingSets, prev] = await Promise.all([
+          supabase.from('exercise_sets').select('*').eq('session_id', data.id).order('set_number'),
+          fetchPreviousSession(session.user.id, data.session_type),
+        ])
+
+        if (existingSets.data?.length) {
           const grouped = {}
-          for (const s of existingSets) {
+          for (const s of existingSets.data) {
             if (!grouped[s.exercise_name]) grouped[s.exercise_name] = []
             grouped[s.exercise_name][s.set_number - 1] = {
               weight: s.weight || '',
@@ -60,7 +88,7 @@ export default function WorkoutLog({ session }) {
           }
           setSets(grouped)
         }
-        // load cardio
+
         const { data: cardioData } = await supabase
           .from('cardio_logs')
           .select('*')
@@ -76,15 +104,19 @@ export default function WorkoutLog({ session }) {
             notes: cardioData.notes || '',
           })
         }
+
+        setPrevSession(prev)
         setStep('log')
       }
     }
     checkExisting()
   }, [session])
 
-  function selectType(type) {
+  async function selectType(type) {
     setSessionType(type)
     setSets(buildInitialSets(SESSION_TYPES[type].exercises))
+    const prev = await fetchPreviousSession(session.user.id, type)
+    setPrevSession(prev)
     setStep('log')
   }
 
@@ -119,7 +151,6 @@ export default function WorkoutLog({ session }) {
         setExistingId(sessionId)
       }
 
-      // Save exercise sets
       const setRows = []
       for (const [exercise, setList] of Object.entries(sets)) {
         for (let i = 0; i < setList.length; i++) {
@@ -138,7 +169,6 @@ export default function WorkoutLog({ session }) {
       }
       if (setRows.length) await supabase.from('exercise_sets').insert(setRows)
 
-      // Save cardio
       const hasCardio = Object.values(cardio).some(v => v !== '')
       if (hasCardio) {
         await supabase.from('cardio_logs').insert({
@@ -200,6 +230,16 @@ export default function WorkoutLog({ session }) {
         )}
       </div>
 
+      {/* Previous session banner */}
+      {prevSession && (
+        <div className="flex items-center gap-2 bg-gray-50 border border-gray-200 px-3 py-2">
+          <History size={13} className="text-gray-400 shrink-0" />
+          <p className="text-xs text-gray-500">
+            Showing last session ({fmtDate(prevSession.date)}) — beat those numbers
+          </p>
+        </div>
+      )}
+
       {/* Energy level */}
       <div>
         <label className="block text-sm font-medium mb-2">Energy level</label>
@@ -225,6 +265,7 @@ export default function WorkoutLog({ session }) {
             key={exercise}
             exercise={exercise}
             sets={sets[exercise] || [EMPTY_SET, EMPTY_SET, EMPTY_SET]}
+            prevSets={prevSession?.sets?.[exercise] || null}
             onChange={(setIdx, field, value) => updateSet(exercise, setIdx, field, value)}
           />
         ))}
@@ -301,7 +342,7 @@ export default function WorkoutLog({ session }) {
   )
 }
 
-function ExerciseBlock({ exercise, sets, onChange }) {
+function ExerciseBlock({ exercise, sets, prevSets, onChange }) {
   const [open, setOpen] = useState(true)
 
   return (
@@ -314,33 +355,63 @@ function ExerciseBlock({ exercise, sets, onChange }) {
         <ChevronDown size={16} className={`transition-transform ${open ? 'rotate-180' : ''}`} />
       </button>
       {open && (
-        <div className="border-t border-gray-200 px-4 pb-4 pt-3 space-y-3">
-          {sets.map((set, i) => (
-            <div key={i} className="grid grid-cols-[auto_1fr_1fr_1fr] gap-2 items-center">
-              <span className="text-xs text-gray-400 w-8">S{i + 1}</span>
-              <input
-                type="text"
-                placeholder="Weight"
-                value={set.weight}
-                onChange={e => onChange(i, 'weight', e.target.value)}
-                className="border border-gray-300 px-2 py-1.5 text-sm outline-none focus:border-black w-full"
-              />
-              <input
-                type="text"
-                placeholder="Reps"
-                value={set.reps}
-                onChange={e => onChange(i, 'reps', e.target.value)}
-                className="border border-gray-300 px-2 py-1.5 text-sm outline-none focus:border-black w-full"
-              />
-              <input
-                type="text"
-                placeholder="Note"
-                value={set.notes}
-                onChange={e => onChange(i, 'notes', e.target.value)}
-                className="border border-gray-300 px-2 py-1.5 text-sm outline-none focus:border-black w-full"
-              />
+        <div className="border-t border-gray-200 px-4 pb-4 pt-3 space-y-2">
+          {/* Previous session header */}
+          {prevSets && (
+            <div className="grid grid-cols-[auto_1fr_1fr_1fr] gap-2 mb-1">
+              <span className="w-8" />
+              <span className="text-xs text-gray-400 text-center">Weight</span>
+              <span className="text-xs text-gray-400 text-center">Reps</span>
+              <span className="text-xs text-gray-400 text-center">Note</span>
             </div>
-          ))}
+          )}
+          {sets.map((set, i) => {
+            const prev = prevSets?.[i]
+            return (
+              <div key={i} className="space-y-1">
+                {/* Previous session row */}
+                {prev && (prev.weight || prev.reps) && (
+                  <div className="grid grid-cols-[auto_1fr_1fr_1fr] gap-2 items-center">
+                    <span className="text-xs text-gray-300 w-8">↑{i + 1}</span>
+                    <div className="border border-dashed border-gray-200 px-2 py-1 text-xs text-gray-400 text-center">
+                      {prev.weight || '–'}
+                    </div>
+                    <div className="border border-dashed border-gray-200 px-2 py-1 text-xs text-gray-400 text-center">
+                      {prev.reps || '–'}
+                    </div>
+                    <div className="border border-dashed border-gray-200 px-2 py-1 text-xs text-gray-300 text-center">
+                      last
+                    </div>
+                  </div>
+                )}
+                {/* Current set row */}
+                <div className="grid grid-cols-[auto_1fr_1fr_1fr] gap-2 items-center">
+                  <span className="text-xs text-gray-400 w-8">S{i + 1}</span>
+                  <input
+                    type="text"
+                    placeholder={prev?.weight || 'Weight'}
+                    value={set.weight}
+                    onChange={e => onChange(i, 'weight', e.target.value)}
+                    className="border border-gray-300 px-2 py-1.5 text-sm outline-none focus:border-black w-full"
+                  />
+                  <input
+                    type="text"
+                    placeholder={prev?.reps || 'Reps'}
+                    value={set.reps}
+                    onChange={e => onChange(i, 'reps', e.target.value)}
+                    className="border border-gray-300 px-2 py-1.5 text-sm outline-none focus:border-black w-full"
+                  />
+                  <input
+                    type="text"
+                    placeholder="Note"
+                    value={set.notes}
+                    onChange={e => onChange(i, 'notes', e.target.value)}
+                    className="border border-gray-300 px-2 py-1.5 text-sm outline-none focus:border-black w-full"
+                  />
+                </div>
+              </div>
+            )
+          })}
         </div>
       )}
     </div>
@@ -360,4 +431,10 @@ function Field({ label, value, onChange, placeholder }) {
       />
     </div>
   )
+}
+
+function fmtDate(date) {
+  return new Date(date + 'T00:00:00').toLocaleDateString('en-AU', {
+    day: 'numeric', month: 'short',
+  })
 }
