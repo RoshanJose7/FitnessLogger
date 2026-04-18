@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Dumbbell, UtensilsCrossed, CheckCircle2, Circle } from 'lucide-react'
+import { Dumbbell, UtensilsCrossed, CheckCircle2, Circle, Flame } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { PROTEIN_TARGET_PER_KG, DEFAULT_BODYWEIGHT_KG, WATER_TARGET_L } from '../lib/exercises'
 
@@ -14,10 +14,41 @@ function fmt(date) {
   })
 }
 
+function calcStreak(sessions) {
+  // Count consecutive completed sessions from most recent backwards.
+  // A streak breaks only if a completed session is followed by an incomplete one
+  // (i.e. the user showed up but didn't finish), not simply by a rest day.
+  const completed = sessions
+    .filter(s => s.completed)
+    .sort((a, b) => (a.date < b.date ? 1 : -1))
+
+  return completed.length
+    ? sessions
+        .sort((a, b) => (a.date < b.date ? 1 : -1))
+        .reduce((streak, s) => {
+          if (streak === null) return s.completed ? 1 : 0
+          return s.completed ? streak + 1 : streak
+        }, null) ?? 0
+    : 0
+}
+
+// Simpler and more honest: just count the unbroken tail of completed sessions.
+function calcStreakSimple(sessions) {
+  const sorted = [...sessions].sort((a, b) => (a.date < b.date ? 1 : -1))
+  let count = 0
+  for (const s of sorted) {
+    if (s.completed) count++
+    else break
+  }
+  return count
+}
+
 export default function Dashboard({ session }) {
   const [workout, setWorkout] = useState(null)
   const [nutrition, setNutrition] = useState(null)
   const [meals, setMeals] = useState([])
+  const [streak, setStreak] = useState(0)
+  const [totalSessions, setTotalSessions] = useState(0)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
@@ -25,29 +56,19 @@ export default function Dashboard({ session }) {
       const date = today()
       const uid = session.user.id
 
-      const [{ data: ws }, { data: nl }] = await Promise.all([
-        supabase
-          .from('workout_sessions')
-          .select('*')
-          .eq('user_id', uid)
-          .eq('date', date)
-          .maybeSingle(),
-        supabase
-          .from('nutrition_logs')
-          .select('*')
-          .eq('user_id', uid)
-          .eq('date', date)
-          .maybeSingle(),
+      const [{ data: ws }, { data: nl }, { data: allSessions }] = await Promise.all([
+        supabase.from('workout_sessions').select('*').eq('user_id', uid).eq('date', date).maybeSingle(),
+        supabase.from('nutrition_logs').select('*').eq('user_id', uid).eq('date', date).maybeSingle(),
+        supabase.from('workout_sessions').select('date, completed').eq('user_id', uid).order('date', { ascending: false }),
       ])
 
       setWorkout(ws)
       setNutrition(nl)
+      setStreak(calcStreakSimple(allSessions || []))
+      setTotalSessions((allSessions || []).filter(s => s.completed).length)
 
       if (nl) {
-        const { data: ms } = await supabase
-          .from('meals')
-          .select('*')
-          .eq('nutrition_log_id', nl.id)
+        const { data: ms } = await supabase.from('meals').select('*').eq('nutrition_log_id', nl.id)
         setMeals(ms || [])
       }
 
@@ -69,12 +90,30 @@ export default function Dashboard({ session }) {
 
       {loading ? (
         <div className="space-y-3">
-          {[1, 2].map(i => (
+          {[1, 2, 3].map(i => (
             <div key={i} className="h-28 border border-gray-200 animate-pulse bg-gray-50" />
           ))}
         </div>
       ) : (
         <div className="space-y-3">
+          {/* Streak card */}
+          <div className={`border p-4 flex items-center justify-between ${streak > 0 ? 'border-black bg-black text-white' : 'border-gray-200 bg-gray-50'}`}>
+            <div className="flex items-center gap-3">
+              <Flame size={20} className={streak > 0 ? 'text-white' : 'text-gray-300'} />
+              <div>
+                <p className={`text-sm font-medium ${streak > 0 ? 'text-white' : 'text-gray-400'}`}>
+                  {streak > 0 ? `${streak} session streak` : 'No streak yet'}
+                </p>
+                <p className={`text-xs mt-0.5 ${streak > 0 ? 'text-gray-300' : 'text-gray-400'}`}>
+                  {totalSessions} total sessions completed
+                </p>
+              </div>
+            </div>
+            {streak > 0 && (
+              <span className="text-4xl font-bold tabular-nums">{streak}</span>
+            )}
+          </div>
+
           {/* Workout card */}
           <div className="border border-black p-4">
             <div className="flex items-start justify-between mb-3">
@@ -121,7 +160,7 @@ export default function Dashboard({ session }) {
                 <div className="grid grid-cols-3 gap-3 text-center">
                   <Stat label="Calories" value={totalCalories || '–'} />
                   <Stat
-                    label={`Protein (g)`}
+                    label="Protein (g)"
                     value={totalProtein || '–'}
                     note={totalProtein >= proteinTarget ? '✓ target' : `target ${proteinTarget}g`}
                     ok={totalProtein >= proteinTarget}
@@ -153,7 +192,7 @@ export default function Dashboard({ session }) {
             )}
           </div>
 
-          {/* Protein target reminder */}
+          {/* Daily targets reminder */}
           <div className="border border-gray-200 p-3 bg-gray-50">
             <p className="text-xs text-gray-600">
               Daily target: <span className="font-medium">{proteinTarget}g protein</span> ·{' '}
