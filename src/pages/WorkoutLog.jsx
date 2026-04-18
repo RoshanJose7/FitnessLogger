@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { ChevronDown, CheckCircle2, History } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { SESSION_TYPES } from '../lib/exercises'
+import RestTimer from '../components/RestTimer'
 
 function today() {
   return new Date().toISOString().split('T')[0]
@@ -338,6 +339,8 @@ export default function WorkoutLog({ session }) {
           {saving ? 'Saving…' : 'Complete session'}
         </button>
       </div>
+
+      <RestTimer />
     </div>
   )
 }

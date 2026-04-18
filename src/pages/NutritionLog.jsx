@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect } from 'react'
 import { CheckCircle2, Plus, Trash2 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { MEAL_TYPES, PROTEIN_TARGET_PER_KG, DEFAULT_BODYWEIGHT_KG, WATER_TARGET_L } from '../lib/exercises'
@@ -17,18 +17,38 @@ export default function NutritionLog({ session }) {
   const [mealData, setMealData] = useState(
     Object.fromEntries(MEAL_TYPES.map(m => [m, [{ ...EMPTY_MEAL_ITEM }]]))
   )
+  const [recentFoods, setRecentFoods] = useState({}) // { [mealType]: [{food, calories, protein_g}] }
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     async function load() {
-      const { data: log } = await supabase
-        .from('nutrition_logs')
-        .select('*')
-        .eq('user_id', session.user.id)
-        .eq('date', today())
-        .maybeSingle()
+      const uid = session.user.id
+
+      // Load today's log + recent foods across last 14 days in parallel
+      const [{ data: log }, { data: recentMeals }] = await Promise.all([
+        supabase.from('nutrition_logs').select('*').eq('user_id', uid).eq('date', today()).maybeSingle(),
+        supabase
+          .from('meals')
+          .select('meal_type, food, calories, protein_g, nutrition_logs!inner(user_id, date)')
+          .eq('nutrition_logs.user_id', uid)
+          .lt('nutrition_logs.date', today())
+          .not('food', 'is', null)
+          .order('id', { ascending: false })
+          .limit(200),
+      ])
+
+      // Build recent foods map: deduplicate by food name per meal type, keep 5 most recent
+      const recent = {}
+      for (const m of recentMeals || []) {
+        if (!recent[m.meal_type]) recent[m.meal_type] = []
+        const already = recent[m.meal_type].some(r => r.food?.toLowerCase() === m.food?.toLowerCase())
+        if (!already && recent[m.meal_type].length < 5) {
+          recent[m.meal_type].push({ food: m.food, calories: m.calories, protein_g: m.protein_g })
+        }
+      }
+      setRecentFoods(recent)
 
       if (log) {
         setLogId(log.id)
@@ -37,10 +57,7 @@ export default function NutritionLog({ session }) {
         setNotes(log.notes || '')
 
         const { data: meals } = await supabase
-          .from('meals')
-          .select('*')
-          .eq('nutrition_log_id', log.id)
-          .order('id')
+          .from('meals').select('*').eq('nutrition_log_id', log.id).order('id')
 
         if (meals?.length) {
           const grouped = Object.fromEntries(MEAL_TYPES.map(m => [m, []]))
@@ -65,17 +82,37 @@ export default function NutritionLog({ session }) {
   }, [session])
 
   function addRow(mealType) {
-    setMealData(prev => ({
-      ...prev,
-      [mealType]: [...prev[mealType], { ...EMPTY_MEAL_ITEM }],
-    }))
+    setMealData(prev => ({ ...prev, [mealType]: [...prev[mealType], { ...EMPTY_MEAL_ITEM }] }))
+  }
+
+  function addRecentFood(mealType, item) {
+    setMealData(prev => {
+      const rows = prev[mealType]
+      // If last row is empty, fill it; otherwise append
+      const lastEmpty = rows.length > 0 && !rows[rows.length - 1].food && !rows[rows.length - 1].calories
+      if (lastEmpty) {
+        return {
+          ...prev,
+          [mealType]: rows.map((r, i) => i === rows.length - 1 ? {
+            food: item.food || '',
+            calories: item.calories != null ? String(item.calories) : '',
+            protein_g: item.protein_g != null ? String(item.protein_g) : '',
+          } : r),
+        }
+      }
+      return {
+        ...prev,
+        [mealType]: [...rows, {
+          food: item.food || '',
+          calories: item.calories != null ? String(item.calories) : '',
+          protein_g: item.protein_g != null ? String(item.protein_g) : '',
+        }],
+      }
+    })
   }
 
   function removeRow(mealType, idx) {
-    setMealData(prev => ({
-      ...prev,
-      [mealType]: prev[mealType].filter((_, i) => i !== idx),
-    }))
+    setMealData(prev => ({ ...prev, [mealType]: prev[mealType].filter((_, i) => i !== idx) }))
   }
 
   function updateRow(mealType, idx, field, value) {
@@ -174,7 +211,9 @@ export default function NutritionLog({ session }) {
           key={mealType}
           mealType={mealType}
           rows={mealData[mealType]}
+          recent={recentFoods[mealType] || []}
           onAdd={() => addRow(mealType)}
+          onAddRecent={item => addRecentFood(mealType, item)}
           onRemove={idx => removeRow(mealType, idx)}
           onUpdate={(idx, field, val) => updateRow(mealType, idx, field, val)}
         />
@@ -196,9 +235,7 @@ export default function NutritionLog({ session }) {
 
       {/* Water */}
       <div>
-        <label className="block text-sm font-medium mb-1.5">
-          Water (L) — target {WATER_TARGET_L}L
-        </label>
+        <label className="block text-sm font-medium mb-1.5">Water (L) — target {WATER_TARGET_L}L</label>
         <div className="flex items-center gap-2">
           <input
             type="number"
@@ -240,7 +277,7 @@ export default function NutritionLog({ session }) {
   )
 }
 
-function MealSection({ mealType, rows, onAdd, onRemove, onUpdate }) {
+function MealSection({ mealType, rows, recent, onAdd, onAddRecent, onRemove, onUpdate }) {
   return (
     <div className="border border-black">
       <div className="px-4 py-3 border-b border-gray-200 flex items-center justify-between">
@@ -252,6 +289,23 @@ function MealSection({ mealType, rows, onAdd, onRemove, onUpdate }) {
           <Plus size={14} /> Add item
         </button>
       </div>
+
+      {/* Quick-add recent foods */}
+      {recent.length > 0 && (
+        <div className="px-4 pt-3 pb-2 flex flex-wrap gap-1.5 border-b border-gray-100">
+          {recent.map((item, i) => (
+            <button
+              key={i}
+              onClick={() => onAddRecent(item)}
+              className="text-xs border border-gray-200 px-2.5 py-1 hover:border-black hover:bg-gray-50 transition-colors truncate max-w-[140px]"
+              title={item.food}
+            >
+              {item.food}
+            </button>
+          ))}
+        </div>
+      )}
+
       <div className="divide-y divide-gray-100">
         {rows.map((row, idx) => (
           <div key={idx} className="px-4 py-3 space-y-2">
