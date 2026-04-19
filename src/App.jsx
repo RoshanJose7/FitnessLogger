@@ -3,6 +3,7 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { supabase } from './lib/supabase'
 import Layout from './components/Layout'
 import ProtectedRoute from './components/ProtectedRoute'
+import InstallPrompt from './components/InstallPrompt'
 import Login from './pages/Login'
 import Dashboard from './pages/Dashboard'
 import WorkoutLog from './pages/WorkoutLog'
@@ -29,6 +30,8 @@ export default function App() {
   }
 
   return (
+    <>
+    {session && <InstallPrompt />}
     <BrowserRouter>
       <Routes>
         <Route
@@ -56,5 +59,6 @@ export default function App() {
         />
       </Routes>
     </BrowserRouter>
+    </>
   )
 }
