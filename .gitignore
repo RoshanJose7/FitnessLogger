@@ -13,6 +13,7 @@ dist-ssr
 *.local
 
 .env
+obsidian/config.md
 
 # Editor directories and files
 .vscode/*
