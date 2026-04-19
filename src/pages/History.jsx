@@ -186,6 +186,11 @@ export default function History({ session }) {
                     <ChevronDown size={16} className={`text-gray-400 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
                   </div>
                 </button>
+                {isOpen && !d && (
+                  <div className="border-t border-gray-100 px-4 py-4 space-y-2">
+                    {[1, 2, 3].map(i => <div key={i} className="h-3 bg-gray-100 animate-pulse" />)}
+                  </div>
+                )}
                 {isOpen && d && (
                   <div className="border-t border-gray-200 px-4 pb-4 pt-3 space-y-4">
                     {Object.entries(groupSets(d.sets)).map(([ex, sets]) => (
@@ -258,6 +263,11 @@ export default function History({ session }) {
                   </div>
                   <ChevronDown size={16} className={`text-gray-400 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
                 </button>
+                {isOpen && !d && (
+                  <div className="border-t border-gray-100 px-4 py-4 space-y-2">
+                    {[1, 2].map(i => <div key={i} className="h-3 bg-gray-100 animate-pulse" />)}
+                  </div>
+                )}
                 {isOpen && d && (
                   <div className="border-t border-gray-200 px-4 pb-4 pt-3 space-y-3">
                     {groupMeals(meals).map(([type, items]) => (

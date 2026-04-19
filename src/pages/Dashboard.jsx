@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Dumbbell, UtensilsCrossed, CheckCircle2, Circle, Flame, BarChart2 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
-import { PROTEIN_TARGET_PER_KG, DEFAULT_BODYWEIGHT_KG, WATER_TARGET_L } from '../lib/exercises'
+import { SESSION_TYPES, PROTEIN_TARGET_PER_KG, DEFAULT_BODYWEIGHT_KG, WATER_TARGET_L } from '../lib/exercises'
 
 function today() {
   return new Date().toISOString().split('T')[0]
@@ -197,8 +197,8 @@ export default function Dashboard({ session }) {
             </div>
             {workout ? (
               <div className="space-y-1">
-                <p className="text-sm font-medium capitalize">
-                  {workout.session_type.replace('_', ' ')} — Energy {workout.energy_level}/5
+                <p className="text-sm font-medium">
+                  {SESSION_TYPES[workout.session_type]?.label ?? workout.session_type} — Energy {workout.energy_level}/5
                 </p>
                 <p className="text-xs text-gray-500">
                   {workout.completed ? 'Session complete' : 'Session in progress'}

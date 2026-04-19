@@ -17,16 +17,16 @@ export default function NutritionLog({ session }) {
   const [mealData, setMealData] = useState(
     Object.fromEntries(MEAL_TYPES.map(m => [m, [{ ...EMPTY_MEAL_ITEM }]]))
   )
-  const [recentFoods, setRecentFoods] = useState({}) // { [mealType]: [{food, calories, protein_g}] }
-  const [saving, setSaving] = useState(false)
+  const [recentFoods, setRecentFoods] = useState({})
+  const [savingAs, setSavingAs] = useState(null) // null | 'saving'
   const [saved, setSaved] = useState(false)
+  const [saveError, setSaveError] = useState(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     async function load() {
       const uid = session.user.id
 
-      // Load today's log + recent foods across last 14 days in parallel
       const [{ data: log }, { data: recentMeals }] = await Promise.all([
         supabase.from('nutrition_logs').select('*').eq('user_id', uid).eq('date', today()).maybeSingle(),
         supabase
@@ -39,7 +39,6 @@ export default function NutritionLog({ session }) {
           .limit(200),
       ])
 
-      // Build recent foods map: deduplicate by food name per meal type, keep 5 most recent
       const recent = {}
       for (const m of recentMeals || []) {
         if (!recent[m.meal_type]) recent[m.meal_type] = []
@@ -88,26 +87,16 @@ export default function NutritionLog({ session }) {
   function addRecentFood(mealType, item) {
     setMealData(prev => {
       const rows = prev[mealType]
-      // If last row is empty, fill it; otherwise append
       const lastEmpty = rows.length > 0 && !rows[rows.length - 1].food && !rows[rows.length - 1].calories
+      const newItem = {
+        food: item.food || '',
+        calories: item.calories != null ? String(item.calories) : '',
+        protein_g: item.protein_g != null ? String(item.protein_g) : '',
+      }
       if (lastEmpty) {
-        return {
-          ...prev,
-          [mealType]: rows.map((r, i) => i === rows.length - 1 ? {
-            food: item.food || '',
-            calories: item.calories != null ? String(item.calories) : '',
-            protein_g: item.protein_g != null ? String(item.protein_g) : '',
-          } : r),
-        }
+        return { ...prev, [mealType]: rows.map((r, i) => i === rows.length - 1 ? newItem : r) }
       }
-      return {
-        ...prev,
-        [mealType]: [...rows, {
-          food: item.food || '',
-          calories: item.calories != null ? String(item.calories) : '',
-          protein_g: item.protein_g != null ? String(item.protein_g) : '',
-        }],
-      }
+      return { ...prev, [mealType]: [...rows, newItem] }
     })
   }
 
@@ -122,8 +111,16 @@ export default function NutritionLog({ session }) {
     }))
   }
 
+  function adjustWater(delta) {
+    setWaterL(prev => {
+      const next = Math.max(0, Math.round((Number(prev || 0) + delta) * 100) / 100)
+      return String(next)
+    })
+  }
+
   async function handleSave() {
-    setSaving(true)
+    setSavingAs('saving')
+    setSaveError(null)
     try {
       let lid = logId
       const logPayload = {
@@ -138,7 +135,8 @@ export default function NutritionLog({ session }) {
         await supabase.from('nutrition_logs').update(logPayload).eq('id', lid)
         await supabase.from('meals').delete().eq('nutrition_log_id', lid)
       } else {
-        const { data } = await supabase.from('nutrition_logs').insert(logPayload).select().single()
+        const { data, error } = await supabase.from('nutrition_logs').insert(logPayload).select().single()
+        if (error) throw error
         lid = data.id
         setLogId(lid)
       }
@@ -160,15 +158,18 @@ export default function NutritionLog({ session }) {
       if (mealRows.length) await supabase.from('meals').insert(mealRows)
 
       setSaved(true)
-      setTimeout(() => setSaved(false), 2000)
+      setTimeout(() => setSaved(false), 2500)
+    } catch {
+      setSaveError('Failed to save. Check your connection and try again.')
     } finally {
-      setSaving(false)
+      setSavingAs(null)
     }
   }
 
   const totalCalories = Object.values(mealData).flat().reduce((s, r) => s + (Number(r.calories) || 0), 0)
   const totalProtein = Object.values(mealData).flat().reduce((s, r) => s + (Number(r.protein_g) || 0), 0)
   const proteinTarget = Math.round(DEFAULT_BODYWEIGHT_KG * PROTEIN_TARGET_PER_KG)
+  const waterMet = waterL !== '' && Number(waterL) >= WATER_TARGET_L
 
   if (loading) {
     return (
@@ -179,26 +180,48 @@ export default function NutritionLog({ session }) {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
+      {/* Header */}
       <div className="flex items-start justify-between">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Nutrition</h1>
-          <p className="text-sm text-gray-500 mt-0.5">{today()}</p>
+          <p className="text-sm text-gray-500 mt-0.5">
+            {new Date().toLocaleDateString('en-AU', { weekday: 'long', day: 'numeric', month: 'long' })}
+          </p>
         </div>
         {saved && (
-          <span className="flex items-center gap-1 text-xs text-black font-medium">
-            <CheckCircle2 size={14} /> Saved
+          <span className="flex items-center gap-1.5 text-xs font-medium border border-black px-2 py-1">
+            <CheckCircle2 size={13} /> Saved
           </span>
         )}
       </div>
 
+      {/* Running totals summary */}
+      {(totalCalories > 0 || totalProtein > 0) && (
+        <div className="border border-black px-4 py-3 grid grid-cols-2 gap-3">
+          <div>
+            <p className="text-xs text-gray-500 mb-0.5">Total calories</p>
+            <p className="text-2xl font-semibold tabular-nums">{totalCalories}</p>
+          </div>
+          <div>
+            <p className="text-xs text-gray-500 mb-0.5">Protein</p>
+            <p className={`text-2xl font-semibold tabular-nums ${totalProtein >= proteinTarget ? '' : ''}`}>
+              {totalProtein}<span className="text-sm font-normal text-gray-400">g</span>
+            </p>
+            <p className={`text-xs mt-0.5 ${totalProtein >= proteinTarget ? 'font-medium' : 'text-gray-400'}`}>
+              {totalProtein >= proteinTarget ? `✓ target ${proteinTarget}g` : `target: ${proteinTarget}g`}
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* Workout day toggle */}
       <div className="flex items-center justify-between border border-black px-4 py-3">
-        <span className="text-sm font-medium">Workout day?</span>
+        <span className="text-sm font-medium">Workout day</span>
         <button
           onClick={() => setIsWorkoutDay(v => !v)}
-          className={`px-3 py-1 text-xs font-medium border transition-colors ${
-            isWorkoutDay ? 'bg-black text-white border-black' : 'border-gray-300 text-gray-500'
+          className={`px-4 py-1.5 text-xs font-medium border transition-colors ${
+            isWorkoutDay ? 'bg-black text-white border-black' : 'border-gray-300 text-gray-500 hover:border-black'
           }`}
         >
           {isWorkoutDay ? 'Yes' : 'No'}
@@ -219,38 +242,36 @@ export default function NutritionLog({ session }) {
         />
       ))}
 
-      {/* Daily totals */}
-      <div className="border border-black p-4">
-        <h2 className="text-sm font-medium mb-3">Daily Total</h2>
-        <div className="grid grid-cols-2 gap-3">
-          <TotalStat label="Calories" value={totalCalories} />
-          <TotalStat
-            label="Protein (g)"
-            value={totalProtein}
-            note={totalProtein >= proteinTarget ? `✓ target ${proteinTarget}g` : `target: ${proteinTarget}g`}
-            ok={totalProtein >= proteinTarget}
-          />
-        </div>
-      </div>
-
       {/* Water */}
       <div>
-        <label className="block text-sm font-medium mb-1.5">Water (L) — target {WATER_TARGET_L}L</label>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center justify-between mb-2">
+          <label className="text-sm font-medium">
+            Water
+            <span className="text-gray-400 font-normal ml-1.5">target {WATER_TARGET_L}L</span>
+          </label>
+          {waterMet && <span className="text-xs font-medium">✓ target met</span>}
+        </div>
+        <div className="flex items-center gap-2 mb-2">
           <input
-            type="number"
-            step="0.25"
-            min="0"
-            max="10"
+            type="text"
+            inputMode="decimal"
             value={waterL}
             onChange={e => setWaterL(e.target.value)}
             placeholder="0.0"
-            className="w-28 border border-black px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-black"
+            className="w-24 border border-black px-3 py-2.5 text-sm outline-none focus:ring-1 focus:ring-black text-center tabular-nums"
           />
           <span className="text-sm text-gray-500">litres</span>
-          {waterL && Number(waterL) >= WATER_TARGET_L && (
-            <span className="text-xs text-black font-medium">✓ target met</span>
-          )}
+        </div>
+        <div className="flex gap-2">
+          {[0.25, 0.5, 1].map(amt => (
+            <button
+              key={amt}
+              onClick={() => adjustWater(amt)}
+              className="border border-gray-200 hover:border-black px-3 py-2 text-xs font-medium transition-colors"
+            >
+              +{amt < 1 ? `${amt * 1000}ml` : `${amt}L`}
+            </button>
+          ))}
         </div>
       </div>
 
@@ -262,31 +283,51 @@ export default function NutritionLog({ session }) {
           onChange={e => setNotes(e.target.value)}
           rows={2}
           placeholder="Any notes about today's eating?"
-          className="w-full border border-black px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-black resize-none"
+          className="w-full border border-black px-3 py-2.5 text-sm outline-none focus:ring-1 focus:ring-black resize-none"
         />
       </div>
 
+      {/* Save error */}
+      {saveError && (
+        <div role="alert" className="border border-black bg-black text-white px-3 py-2.5 text-sm">
+          {saveError}
+        </div>
+      )}
+
       <button
         onClick={handleSave}
-        disabled={saving}
-        className="w-full bg-black text-white py-2.5 text-sm font-medium hover:bg-gray-900 transition-colors disabled:opacity-50"
+        disabled={!!savingAs}
+        className="w-full bg-black text-white py-3 text-sm font-medium hover:bg-gray-900 transition-colors disabled:opacity-40"
       >
-        {saving ? 'Saving…' : 'Save nutrition log'}
+        {savingAs ? 'Saving…' : 'Save nutrition log'}
       </button>
     </div>
   )
 }
 
 function MealSection({ mealType, rows, recent, onAdd, onAddRecent, onRemove, onUpdate }) {
+  const mealCal = rows.reduce((s, r) => s + (Number(r.calories) || 0), 0)
+  const mealPro = rows.reduce((s, r) => s + (Number(r.protein_g) || 0), 0)
+  const hasData = mealCal > 0 || mealPro > 0
+
   return (
     <div className="border border-black">
-      <div className="px-4 py-3 border-b border-gray-200 flex items-center justify-between">
-        <span className="text-sm font-medium">{mealType}</span>
+      <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between gap-2">
+        <div className="flex items-baseline gap-2 min-w-0">
+          <span className="text-sm font-medium">{mealType}</span>
+          {hasData && (
+            <span className="text-xs text-gray-400 shrink-0">
+              {mealCal > 0 ? `${mealCal} kcal` : ''}
+              {mealCal > 0 && mealPro > 0 ? ' · ' : ''}
+              {mealPro > 0 ? `${mealPro}g` : ''}
+            </span>
+          )}
+        </div>
         <button
           onClick={onAdd}
-          className="flex items-center gap-1 text-xs text-gray-500 hover:text-black transition-colors"
+          className="flex items-center gap-1 text-xs text-gray-500 hover:text-black transition-colors shrink-0"
         >
-          <Plus size={14} /> Add item
+          <Plus size={14} /> Add
         </button>
       </div>
 
@@ -297,8 +338,8 @@ function MealSection({ mealType, rows, recent, onAdd, onAddRecent, onRemove, onU
             <button
               key={i}
               onClick={() => onAddRecent(item)}
-              className="text-xs border border-gray-200 px-2.5 py-1 hover:border-black hover:bg-gray-50 transition-colors truncate max-w-[140px]"
-              title={item.food}
+              title={`${item.food}${item.calories ? ` · ${item.calories} kcal` : ''}`}
+              className="text-xs border border-gray-200 px-2.5 py-1.5 hover:border-black hover:bg-gray-50 transition-colors max-w-[160px] truncate"
             >
               {item.food}
             </button>
@@ -309,55 +350,51 @@ function MealSection({ mealType, rows, recent, onAdd, onAddRecent, onRemove, onU
       <div className="divide-y divide-gray-100">
         {rows.map((row, idx) => (
           <div key={idx} className="px-4 py-3 space-y-2">
-            <div className="flex gap-2 items-start">
+            <div className="flex gap-2 items-center">
               <input
                 type="text"
                 placeholder="Food / description"
                 value={row.food}
                 onChange={e => onUpdate(idx, 'food', e.target.value)}
-                className="flex-1 border border-gray-300 px-2 py-1.5 text-sm outline-none focus:border-black min-w-0"
+                className="flex-1 border border-gray-200 px-2.5 py-2.5 text-sm outline-none focus:border-black min-w-0"
               />
               {rows.length > 1 && (
-                <button onClick={() => onRemove(idx)} className="text-gray-300 hover:text-black transition-colors mt-1">
+                <button
+                  onClick={() => onRemove(idx)}
+                  className="p-2 text-gray-300 hover:text-black transition-colors shrink-0"
+                  aria-label="Remove item"
+                >
                   <Trash2 size={14} />
                 </button>
               )}
             </div>
             <div className="grid grid-cols-2 gap-2">
               <div>
-                <label className="block text-xs text-gray-400 mb-0.5">Calories</label>
+                <label className="block text-xs text-gray-400 mb-1">Calories</label>
                 <input
-                  type="number"
+                  type="text"
+                  inputMode="numeric"
                   placeholder="kcal"
                   value={row.calories}
                   onChange={e => onUpdate(idx, 'calories', e.target.value)}
-                  className="w-full border border-gray-300 px-2 py-1.5 text-sm outline-none focus:border-black"
+                  className="w-full border border-gray-200 px-2.5 py-2.5 text-sm outline-none focus:border-black"
                 />
               </div>
               <div>
-                <label className="block text-xs text-gray-400 mb-0.5">Protein (g)</label>
+                <label className="block text-xs text-gray-400 mb-1">Protein (g)</label>
                 <input
-                  type="number"
+                  type="text"
+                  inputMode="decimal"
                   placeholder="g"
                   value={row.protein_g}
                   onChange={e => onUpdate(idx, 'protein_g', e.target.value)}
-                  className="w-full border border-gray-300 px-2 py-1.5 text-sm outline-none focus:border-black"
+                  className="w-full border border-gray-200 px-2.5 py-2.5 text-sm outline-none focus:border-black"
                 />
               </div>
             </div>
           </div>
         ))}
       </div>
-    </div>
-  )
-}
-
-function TotalStat({ label, value, note, ok }) {
-  return (
-    <div className="bg-gray-50 p-3">
-      <p className="text-xs text-gray-500 mb-0.5">{label}</p>
-      <p className="text-2xl font-semibold">{value || 0}</p>
-      {note && <p className={`text-xs mt-0.5 ${ok ? 'text-black font-medium' : 'text-gray-400'}`}>{note}</p>}
     </div>
   )
 }
