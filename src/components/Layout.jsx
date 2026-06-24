@@ -1,12 +1,17 @@
-import { NavLink } from 'react-router-dom'
-import { LayoutDashboard, Dumbbell, UtensilsCrossed, History, LogOut } from 'lucide-react'
+import { NavLink, Link } from 'react-router-dom'
+import { Dumbbell, UtensilsCrossed, History, Users, LogOut, LayoutDashboard } from 'lucide-react'
 import { signOut } from '../lib/auth'
 
 const NAV = [
-  { to: '/', label: 'Today', icon: LayoutDashboard },
   { to: '/workout', label: 'Workout', icon: Dumbbell },
   { to: '/nutrition', label: 'Nutrition', icon: UtensilsCrossed },
   { to: '/history', label: 'History', icon: History },
+  { to: '/group', label: 'Group', icon: Users },
+]
+
+const MOBILE_NAV = [
+  { to: '/', label: 'Today', icon: LayoutDashboard },
+  ...NAV,
 ]
 
 function NavItem({ to, label, icon: Icon }) {
@@ -31,7 +36,9 @@ export default function Layout({ children }) {
     <div className="min-h-dvh flex flex-col max-w-2xl mx-auto">
       {/* Desktop top nav */}
       <header className="hidden md:flex items-center justify-between px-6 py-4 border-b border-black">
-        <span className="font-semibold tracking-tight text-lg">Fitness Logger</span>
+        <Link to="/" className="font-semibold tracking-tight text-lg hover:opacity-70 transition-opacity">
+          Fitness Logger
+        </Link>
         <nav className="flex items-center gap-1">
           {NAV.map(({ to, label }) => (
             <NavLink
@@ -77,7 +84,7 @@ export default function Layout({ children }) {
 
       {/* Mobile bottom nav */}
       <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-black flex justify-around z-50">
-        {NAV.map(({ to, label, icon }) => (
+        {MOBILE_NAV.map(({ to, label, icon }) => (
           <NavItem key={to} to={to} label={label} icon={icon} />
         ))}
       </nav>

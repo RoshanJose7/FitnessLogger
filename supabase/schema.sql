@@ -4,6 +4,23 @@
 create extension if not exists "uuid-ossp";
 
 -- ─────────────────────────────────────────
+-- Profiles (display names for each user)
+-- ─────────────────────────────────────────
+create table profiles (
+  id           uuid primary key references auth.users(id) on delete cascade,
+  display_name text not null,
+  created_at   timestamptz default now()
+);
+
+alter table profiles enable row level security;
+create policy "Authenticated users read profiles"
+  on profiles for select to authenticated using (true);
+create policy "Users insert own profile"
+  on profiles for insert with check (auth.uid() = id);
+create policy "Users update own profile"
+  on profiles for update using (auth.uid() = id);
+
+-- ─────────────────────────────────────────
 -- Workout sessions
 -- ─────────────────────────────────────────
 create table workout_sessions (
@@ -20,12 +37,16 @@ create table workout_sessions (
 -- One session per user per day
 create unique index workout_sessions_user_date on workout_sessions(user_id, date);
 
--- RLS
+-- RLS: any authenticated user can read; only owner can write
 alter table workout_sessions enable row level security;
-create policy "Users manage own sessions"
-  on workout_sessions for all
-  using (auth.uid() = user_id)
-  with check (auth.uid() = user_id);
+create policy "Authenticated read sessions"
+  on workout_sessions for select to authenticated using (true);
+create policy "Users insert own sessions"
+  on workout_sessions for insert with check (auth.uid() = user_id);
+create policy "Users update own sessions"
+  on workout_sessions for update using (auth.uid() = user_id);
+create policy "Users delete own sessions"
+  on workout_sessions for delete using (auth.uid() = user_id);
 
 -- ─────────────────────────────────────────
 -- Exercise sets
@@ -42,21 +63,19 @@ create table exercise_sets (
 );
 
 alter table exercise_sets enable row level security;
-create policy "Users manage own sets"
-  on exercise_sets for all
-  using (
-    exists (
-      select 1 from workout_sessions ws
-      where ws.id = exercise_sets.session_id
-        and ws.user_id = auth.uid()
-    )
-  )
-  with check (
-    exists (
-      select 1 from workout_sessions ws
-      where ws.id = exercise_sets.session_id
-        and ws.user_id = auth.uid()
-    )
+create policy "Authenticated read sets"
+  on exercise_sets for select to authenticated using (true);
+create policy "Users insert own sets"
+  on exercise_sets for insert with check (
+    exists (select 1 from workout_sessions ws where ws.id = exercise_sets.session_id and ws.user_id = auth.uid())
+  );
+create policy "Users update own sets"
+  on exercise_sets for update using (
+    exists (select 1 from workout_sessions ws where ws.id = exercise_sets.session_id and ws.user_id = auth.uid())
+  );
+create policy "Users delete own sets"
+  on exercise_sets for delete using (
+    exists (select 1 from workout_sessions ws where ws.id = exercise_sets.session_id and ws.user_id = auth.uid())
   );
 
 -- ─────────────────────────────────────────
@@ -75,21 +94,19 @@ create table cardio_logs (
 );
 
 alter table cardio_logs enable row level security;
-create policy "Users manage own cardio"
-  on cardio_logs for all
-  using (
-    exists (
-      select 1 from workout_sessions ws
-      where ws.id = cardio_logs.session_id
-        and ws.user_id = auth.uid()
-    )
-  )
-  with check (
-    exists (
-      select 1 from workout_sessions ws
-      where ws.id = cardio_logs.session_id
-        and ws.user_id = auth.uid()
-    )
+create policy "Authenticated read cardio"
+  on cardio_logs for select to authenticated using (true);
+create policy "Users insert own cardio"
+  on cardio_logs for insert with check (
+    exists (select 1 from workout_sessions ws where ws.id = cardio_logs.session_id and ws.user_id = auth.uid())
+  );
+create policy "Users update own cardio"
+  on cardio_logs for update using (
+    exists (select 1 from workout_sessions ws where ws.id = cardio_logs.session_id and ws.user_id = auth.uid())
+  );
+create policy "Users delete own cardio"
+  on cardio_logs for delete using (
+    exists (select 1 from workout_sessions ws where ws.id = cardio_logs.session_id and ws.user_id = auth.uid())
   );
 
 -- ─────────────────────────────────────────
@@ -108,10 +125,14 @@ create table nutrition_logs (
 create unique index nutrition_logs_user_date on nutrition_logs(user_id, date);
 
 alter table nutrition_logs enable row level security;
-create policy "Users manage own nutrition logs"
-  on nutrition_logs for all
-  using (auth.uid() = user_id)
-  with check (auth.uid() = user_id);
+create policy "Authenticated read nutrition logs"
+  on nutrition_logs for select to authenticated using (true);
+create policy "Users insert own nutrition logs"
+  on nutrition_logs for insert with check (auth.uid() = user_id);
+create policy "Users update own nutrition logs"
+  on nutrition_logs for update using (auth.uid() = user_id);
+create policy "Users delete own nutrition logs"
+  on nutrition_logs for delete using (auth.uid() = user_id);
 
 -- ─────────────────────────────────────────
 -- Meals
@@ -127,19 +148,17 @@ create table meals (
 );
 
 alter table meals enable row level security;
-create policy "Users manage own meals"
-  on meals for all
-  using (
-    exists (
-      select 1 from nutrition_logs nl
-      where nl.id = meals.nutrition_log_id
-        and nl.user_id = auth.uid()
-    )
-  )
-  with check (
-    exists (
-      select 1 from nutrition_logs nl
-      where nl.id = meals.nutrition_log_id
-        and nl.user_id = auth.uid()
-    )
+create policy "Authenticated read meals"
+  on meals for select to authenticated using (true);
+create policy "Users insert own meals"
+  on meals for insert with check (
+    exists (select 1 from nutrition_logs nl where nl.id = meals.nutrition_log_id and nl.user_id = auth.uid())
+  );
+create policy "Users update own meals"
+  on meals for update using (
+    exists (select 1 from nutrition_logs nl where nl.id = meals.nutrition_log_id and nl.user_id = auth.uid())
+  );
+create policy "Users delete own meals"
+  on meals for delete using (
+    exists (select 1 from nutrition_logs nl where nl.id = meals.nutrition_log_id and nl.user_id = auth.uid())
   );

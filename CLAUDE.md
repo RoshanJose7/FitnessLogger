@@ -5,12 +5,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Commands
 
 ```bash
-npm run dev       # Start Vite dev server
-npm run build     # Production build
-npm run lint      # ESLint checks
-npm run preview   # Preview production build
+pnpm dev          # Start Vite dev server
+pnpm build        # Production build
+pnpm lint         # ESLint checks
+pnpm preview      # Preview production build
 # Regenerate PWA icons from public/favicon.svg (run after changing the icon):
-npx pwa-assets-generator --preset minimal-2023 public/favicon.svg
+pnpm pwa-assets-generator --preset minimal-2023 public/favicon.svg
 ```
 
 No test suite is configured.
