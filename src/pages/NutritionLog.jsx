@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react'
-import { CheckCircle2, Plus, Trash2 } from 'lucide-react'
+import { CheckCircle2, Plus, Trash2, ScanLine } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { MEAL_TYPES, PROTEIN_TARGET_PER_KG, DEFAULT_BODYWEIGHT_KG, WATER_TARGET_L } from '../lib/exercises'
+import ScanLabelsModal from '../components/ScanLabelsModal'
 
 function today() {
   return new Date().toISOString().split('T')[0]
@@ -22,6 +23,7 @@ export default function NutritionLog({ session }) {
   const [saved, setSaved] = useState(false)
   const [saveError, setSaveError] = useState(null)
   const [loading, setLoading] = useState(true)
+  const [scanOpen, setScanOpen] = useState(false)
 
   useEffect(() => {
     async function load() {
@@ -111,6 +113,16 @@ export default function NutritionLog({ session }) {
     }))
   }
 
+  function handleScanConfirm(mealType, items) {
+    setMealData(prev => {
+      const rows = [...prev[mealType]]
+      // Replace trailing empty row if present
+      const lastEmpty = rows.length > 0 && !rows[rows.length - 1].food && !rows[rows.length - 1].calories
+      const base = lastEmpty ? rows.slice(0, -1) : rows
+      return { ...prev, [mealType]: [...base, ...items] }
+    })
+  }
+
   function adjustWater(delta) {
     setWaterL(prev => {
       const next = Math.max(0, Math.round((Number(prev || 0) + delta) * 100) / 100)
@@ -189,11 +201,19 @@ export default function NutritionLog({ session }) {
             {new Date().toLocaleDateString('en-AU', { weekday: 'long', day: 'numeric', month: 'long' })}
           </p>
         </div>
-        {saved && (
-          <span className="flex items-center gap-1.5 text-xs font-medium border border-black px-2 py-1">
-            <CheckCircle2 size={13} /> Saved
-          </span>
-        )}
+        <div className="flex items-center gap-2">
+          {saved && (
+            <span className="flex items-center gap-1.5 text-xs font-medium border border-black px-2 py-1">
+              <CheckCircle2 size={13} /> Saved
+            </span>
+          )}
+          <button
+            onClick={() => setScanOpen(true)}
+            className="flex items-center gap-1.5 border border-black px-2.5 py-1.5 text-xs font-medium hover:bg-black hover:text-white transition-colors"
+          >
+            <ScanLine size={13} /> Scan Labels
+          </button>
+        </div>
       </div>
 
       {/* Running totals summary */}
@@ -301,6 +321,12 @@ export default function NutritionLog({ session }) {
       >
         {savingAs ? 'Saving…' : 'Save nutrition log'}
       </button>
+
+      <ScanLabelsModal
+        isOpen={scanOpen}
+        onClose={() => setScanOpen(false)}
+        onConfirm={handleScanConfirm}
+      />
     </div>
   )
 }

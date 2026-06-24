@@ -23,6 +23,15 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
+/* Flash highlight when scanned data populates */
+@keyframes label-flash {
+  0%   { background-color: #fef08a; }
+  100% { background-color: transparent; }
+}
+.flash-highlight {
+  animation: label-flash 700ms ease-out forwards;
+}
+
 /* Remove number input spinners */
 input[type="number"]::-webkit-inner-spin-button,
 input[type="number"]::-webkit-outer-spin-button {

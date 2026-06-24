@@ -16,6 +16,9 @@ dev-dist
 .env
 obsidian/config.md
 
+testdata/
+*.traineddata
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
