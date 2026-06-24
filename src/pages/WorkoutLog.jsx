@@ -167,9 +167,12 @@ export default function WorkoutLog({ session }) {
       }
 
       if (sessionId) {
-        await supabase.from('workout_sessions').update(sessionData).eq('id', sessionId)
-        await supabase.from('exercise_sets').delete().eq('session_id', sessionId)
-        await supabase.from('cardio_logs').delete().eq('session_id', sessionId)
+        const { error: uErr } = await supabase.from('workout_sessions').update(sessionData).eq('id', sessionId)
+        if (uErr) throw uErr
+        const { error: dErr } = await supabase.from('exercise_sets').delete().eq('session_id', sessionId)
+        if (dErr) throw dErr
+        const { error: cErr } = await supabase.from('cardio_logs').delete().eq('session_id', sessionId)
+        if (cErr) throw cErr
       } else {
         const { data, error } = await supabase.from('workout_sessions').insert(sessionData).select().single()
         if (error) throw error

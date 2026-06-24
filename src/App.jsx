@@ -5,6 +5,7 @@ import Layout from './components/Layout'
 import ProtectedRoute from './components/ProtectedRoute'
 import InstallPrompt from './components/InstallPrompt'
 import SetupName from './components/SetupName'
+import Landing from './pages/Landing'
 import Login from './pages/Login'
 import Dashboard from './pages/Dashboard'
 import WorkoutLog from './pages/WorkoutLog'
@@ -65,23 +66,27 @@ export default function App() {
         <Routes>
           <Route
             path="/login"
-            element={session ? <Navigate to="/" replace /> : <Login />}
+            element={session ? <Navigate to="/app" replace /> : <Login />}
           />
           <Route
-            path="/*"
+            path="/"
+            element={session ? <Navigate to="/app" replace /> : <Landing />}
+          />
+          <Route
+            path="/app/*"
             element={
               <ProtectedRoute session={session}>
                 <Layout session={session}>
                   <Routes>
                     <Route path="/" element={<Dashboard session={session} />} />
-                    <Route path="/workout" element={<WorkoutLog session={session} />} />
-                    <Route path="/nutrition" element={<NutritionLog session={session} />} />
-                    <Route path="/history" element={
+                    <Route path="workout" element={<WorkoutLog session={session} />} />
+                    <Route path="nutrition" element={<NutritionLog session={session} />} />
+                    <Route path="history" element={
                       <Suspense fallback={HistoryFallback}>
                         <History session={session} />
                       </Suspense>
                     } />
-                    <Route path="/group" element={<GroupFeed session={session} />} />
+                    <Route path="group" element={<GroupFeed session={session} />} />
                   </Routes>
                 </Layout>
               </ProtectedRoute>

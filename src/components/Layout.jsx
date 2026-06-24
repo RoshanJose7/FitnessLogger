@@ -1,22 +1,25 @@
+import { useEffect, useState } from 'react'
 import { NavLink, Link } from 'react-router-dom'
-import { Dumbbell, UtensilsCrossed, History, Users, LogOut, LayoutDashboard } from 'lucide-react'
+import { Dumbbell, UtensilsCrossed, History, Users, LogOut, LayoutDashboard, Flame } from 'lucide-react'
 import { signOut } from '../lib/auth'
+import { supabase } from '../lib/supabase'
+import { calcStreakSimple } from '../lib/exercises'
 
 const NAV = [
-  { to: '/workout', label: 'Workout', icon: Dumbbell },
-  { to: '/nutrition', label: 'Nutrition', icon: UtensilsCrossed },
-  { to: '/history', label: 'History', icon: History },
-  { to: '/group', label: 'Group', icon: Users },
+  { to: '/app/workout', label: 'Workout', icon: Dumbbell },
+  { to: '/app/nutrition', label: 'Nutrition', icon: UtensilsCrossed },
+  { to: '/app/history', label: 'History', icon: History },
+  { to: '/app/group', label: 'Mates', icon: Users },
 ]
 
 const MOBILE_NAV = [
-  { to: '/', label: 'Today', icon: LayoutDashboard },
+  { to: '/app', label: 'Today', icon: LayoutDashboard },
   ...NAV,
 ]
 
 function NavItem({ to, label, icon: Icon }) {
   return (
-    <NavLink to={to} end={to === '/'}>
+    <NavLink to={to} end={to === '/app'}>
       {({ isActive }) => (
         <span
           className={`flex flex-col items-center gap-1 px-3 py-2 text-xs font-medium transition-colors ${
@@ -31,20 +34,45 @@ function NavItem({ to, label, icon: Icon }) {
   )
 }
 
-export default function Layout({ children }) {
+function FlameChip({ streak }) {
+  const active = streak > 0
+  return (
+    <span className={`flex items-center gap-1 transition-colors ${active ? 'text-black' : 'text-gray-300'}`}>
+      <Flame size={18} strokeWidth={active ? 2 : 1.5} />
+      {active && <span className="text-sm font-bold tabular-nums leading-none">{streak}</span>}
+    </span>
+  )
+}
+
+export default function Layout({ children, session }) {
+  const [streak, setStreak] = useState(0)
+
+  useEffect(() => {
+    if (!session) return
+    supabase
+      .from('workout_sessions')
+      .select('date, completed')
+      .eq('user_id', session.user.id)
+      .order('date', { ascending: false })
+      .then(({ data }) => setStreak(calcStreakSimple(data || [])))
+  }, [session])
+
   return (
     <div className="min-h-dvh flex flex-col max-w-2xl mx-auto">
       {/* Desktop top nav */}
       <header className="hidden md:flex items-center justify-between px-6 py-4 border-b border-black sticky top-0 bg-white z-50">
-        <Link to="/" className="font-semibold tracking-tight text-lg hover:opacity-70 transition-opacity">
-          Fitness Logger
-        </Link>
+        <div className="flex items-center gap-4">
+          <Link to="/app" className="font-semibold tracking-tight text-lg hover:opacity-70 transition-opacity">
+            Fitness Logger
+          </Link>
+          <FlameChip streak={streak} />
+        </div>
         <nav className="flex items-center gap-1">
           {NAV.map(({ to, label }) => (
             <NavLink
               key={to}
               to={to}
-              end={to === '/'}
+              end={to === '/app'}
               className={({ isActive }) =>
                 `px-4 py-2 text-sm font-medium border transition-colors ` +
                 (isActive
@@ -68,13 +96,16 @@ export default function Layout({ children }) {
       {/* Mobile top bar */}
       <header className="md:hidden flex items-center justify-between px-4 py-3 border-b border-black sticky top-0 bg-white z-50">
         <span className="font-semibold tracking-tight">Fitness Logger</span>
-        <button
-          onClick={signOut}
-          className="p-1 text-gray-400 hover:text-black transition-colors"
-          aria-label="Sign out"
-        >
-          <LogOut size={18} />
-        </button>
+        <div className="flex items-center gap-3">
+          <FlameChip streak={streak} />
+          <button
+            onClick={signOut}
+            className="p-1 text-gray-400 hover:text-black transition-colors"
+            aria-label="Sign out"
+          >
+            <LogOut size={18} />
+          </button>
+        </div>
       </header>
 
       {/* Main content */}

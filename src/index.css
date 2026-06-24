@@ -23,6 +23,12 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
+/* Ticker marquee */
+@keyframes ticker {
+  from { transform: translateX(0); }
+  to   { transform: translateX(-50%); }
+}
+
 /* Flash highlight when scanned data populates */
 @keyframes label-flash {
   0%   { background-color: #fef08a; }

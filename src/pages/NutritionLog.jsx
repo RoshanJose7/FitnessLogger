@@ -100,6 +100,10 @@ export default function NutritionLog({ session }) {
       }
       return { ...prev, [mealType]: [...rows, newItem] }
     })
+    setRecentFoods(prev => ({
+      ...prev,
+      [mealType]: (prev[mealType] || []).filter(r => r.food !== item.food),
+    }))
   }
 
   function removeRow(mealType, idx) {
@@ -236,17 +240,21 @@ export default function NutritionLog({ session }) {
       )}
 
       {/* Workout day toggle */}
-      <div className="flex items-center justify-between border border-black px-4 py-3">
-        <span className="text-sm font-medium">Workout day</span>
-        <button
-          onClick={() => setIsWorkoutDay(v => !v)}
-          className={`px-4 py-1.5 text-xs font-medium border transition-colors ${
-            isWorkoutDay ? 'bg-black text-white border-black' : 'border-gray-300 text-gray-500 hover:border-black'
-          }`}
-        >
-          {isWorkoutDay ? 'Yes' : 'No'}
-        </button>
-      </div>
+      <button
+        onClick={() => setIsWorkoutDay(v => !v)}
+        className={`w-full flex items-center justify-between border px-4 py-3 transition-colors text-left ${
+          isWorkoutDay ? 'bg-black border-black text-white' : 'border-black text-black hover:bg-gray-50'
+        }`}
+      >
+        <span className="text-sm font-medium">
+          {isWorkoutDay ? 'Workout day' : 'Rest day'}
+        </span>
+        <span className={`text-xs font-medium border px-3 py-1 transition-colors ${
+          isWorkoutDay ? 'border-white text-white' : 'border-gray-300 text-gray-500'
+        }`}>
+          {isWorkoutDay ? 'Yes' : 'No — tap to change'}
+        </span>
+      </button>
 
       {/* Meals */}
       {MEAL_TYPES.map(mealType => (

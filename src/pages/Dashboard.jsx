@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react'
-import { Link } from 'react-router-dom'
-import { Dumbbell, UtensilsCrossed, CheckCircle2, Circle, Flame, BarChart2 } from 'lucide-react'
+import { Dumbbell, UtensilsCrossed, CheckCircle2, ChevronLeft, ChevronRight } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { SESSION_TYPES, PROTEIN_TARGET_PER_KG, DEFAULT_BODYWEIGHT_KG, WATER_TARGET_L } from '../lib/exercises'
+import { currentWeekRange, buildMonthGrid, buildInsights } from '../lib/insights'
 
 function today() {
   return new Date().toISOString().split('T')[0]
@@ -14,41 +14,32 @@ function fmt(date) {
   })
 }
 
-// Returns [weekStart, weekEnd] as YYYY-MM-DD strings (Mon–Sun)
-function currentWeekRange() {
-  const now = new Date()
-  const day = now.getDay() // 0=Sun
-  const diffToMon = (day === 0 ? -6 : 1 - day)
-  const mon = new Date(now)
-  mon.setDate(now.getDate() + diffToMon)
-  const sun = new Date(mon)
-  sun.setDate(mon.getDate() + 6)
-  return [mon.toISOString().split('T')[0], sun.toISOString().split('T')[0]]
-}
-
 function parseWeight(str) {
   if (!str) return null
   const m = String(str).match(/[\d.]+/)
   return m ? parseFloat(m[0]) : null
 }
 
-function calcStreakSimple(sessions) {
-  const sorted = [...sessions].sort((a, b) => (a.date < b.date ? 1 : -1))
-  let count = 0
-  for (const s of sorted) {
-    if (s.completed) count++
-    else break
-  }
-  return count
+function daysAgo(dateStr) {
+  const diff = Math.round(
+    (new Date(today() + 'T00:00:00') - new Date(dateStr + 'T00:00:00')) / 86400000
+  )
+  if (diff === 0) return 'today'
+  if (diff === 1) return 'yesterday'
+  return `${diff} days ago`
 }
 
 export default function Dashboard({ session }) {
   const [workout, setWorkout] = useState(null)
   const [nutrition, setNutrition] = useState(null)
   const [meals, setMeals] = useState([])
-  const [streak, setStreak] = useState(0)
-  const [totalSessions, setTotalSessions] = useState(0)
   const [weekSummary, setWeekSummary] = useState(null)
+  const [recentSessions, setRecentSessions] = useState([])
+  const [selectedCell, setSelectedCell] = useState(null)
+  const [calMonth, setCalMonth] = useState(() => {
+    const now = new Date()
+    return new Date(now.getFullYear(), now.getMonth(), 1)
+  })
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
@@ -57,26 +48,32 @@ export default function Dashboard({ session }) {
       const uid = session.user.id
       const [weekStart, weekEnd] = currentWeekRange()
 
-      const [{ data: ws }, { data: nl }, { data: allSessions }, { data: weekSessions }, { data: weekNutrition }] =
+      const ninetyDaysAgo = new Date()
+      ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90)
+      const ninetyDaysAgoStr = ninetyDaysAgo.toISOString().split('T')[0]
+
+      const [{ data: ws }, { data: nl }, { data: weekSessions }, { data: weekNutrition }, { data: recent }] =
         await Promise.all([
           supabase.from('workout_sessions').select('*').eq('user_id', uid).eq('date', date).maybeSingle(),
           supabase.from('nutrition_logs').select('*').eq('user_id', uid).eq('date', date).maybeSingle(),
-          supabase.from('workout_sessions').select('date, completed').eq('user_id', uid).order('date', { ascending: false }),
           supabase.from('workout_sessions').select('id, completed, date').eq('user_id', uid).gte('date', weekStart).lte('date', weekEnd),
           supabase.from('nutrition_logs').select('id, date').eq('user_id', uid).gte('date', weekStart).lte('date', weekEnd),
+          supabase.from('workout_sessions')
+            .select('date, session_type, energy_level, completed')
+            .eq('user_id', uid)
+            .gte('date', ninetyDaysAgoStr)
+            .order('date', { ascending: false }),
         ])
 
       setWorkout(ws)
       setNutrition(nl)
-      setStreak(calcStreakSimple(allSessions || []))
-      setTotalSessions((allSessions || []).filter(s => s.completed).length)
+      setRecentSessions(recent || [])
 
       if (nl) {
         const { data: ms } = await supabase.from('meals').select('*').eq('nutrition_log_id', nl.id)
         setMeals(ms || [])
       }
 
-      // Build weekly summary
       const completedThisWeek = (weekSessions || []).filter(s => s.completed).length
       const weekSessionIds = (weekSessions || []).map(s => s.id)
       const weekNutritionIds = (weekNutrition || []).map(n => n.id)
@@ -101,10 +98,18 @@ export default function Dashboard({ session }) {
         const days = weekNutritionIds.length
         const totCal = (weekMeals || []).reduce((s, m) => s + (m.calories || 0), 0)
         const totPro = (weekMeals || []).reduce((s, m) => s + (m.protein_g || 0), 0)
-        if (days > 0) { avgCalories = Math.round(totCal / days); avgProtein = Math.round(totPro / days) }
+        if (days > 0) {
+          avgCalories = Math.round(totCal / days)
+          avgProtein = Math.round(totPro / days)
+        }
       }
 
-      setWeekSummary({ completedThisWeek, totalVolume: Math.round(totalVolume), avgProtein, avgCalories, weekStart, weekEnd })
+      setWeekSummary({
+        completedThisWeek,
+        totalVolume: Math.round(totalVolume),
+        avgProtein,
+        avgCalories,
+      })
       setLoading(false)
     }
     load()
@@ -113,173 +118,342 @@ export default function Dashboard({ session }) {
   const proteinTarget = Math.round(DEFAULT_BODYWEIGHT_KG * PROTEIN_TARGET_PER_KG)
   const totalCalories = meals.reduce((s, m) => s + (m.calories || 0), 0)
   const totalProtein = meals.reduce((s, m) => s + (m.protein_g || 0), 0)
+  const insights = buildInsights(recentSessions)
+  const monthGrid = buildMonthGrid(calMonth.getFullYear(), calMonth.getMonth(), recentSessions)
+  const isCurrentMonth = calMonth.getFullYear() === new Date().getFullYear() && calMonth.getMonth() === new Date().getMonth()
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
+      {/* Header */}
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">{fmt(today())}</h1>
         <p className="text-sm text-gray-500 mt-0.5">Here's how today's looking</p>
       </div>
 
+      {/* Daily targets */}
+      <div className="border border-gray-200 p-3 bg-gray-50">
+        <p className="text-xs text-gray-600">
+          Daily target: <span className="font-medium">{proteinTarget}g protein</span>
+          {' · '}
+          <span className="font-medium">{WATER_TARGET_L}L water</span>
+        </p>
+      </div>
+
       {loading ? (
         <div className="space-y-3">
-          {[1, 2, 3, 4].map(i => (
-            <div key={i} className="h-28 border border-gray-200 animate-pulse bg-gray-50" />
+          {[1, 2, 3].map(i => (
+            <div key={i} className="h-24 border border-gray-200 animate-pulse bg-gray-50" />
           ))}
         </div>
       ) : (
-        <div className="space-y-3">
-          {/* Streak card */}
-          <div className={`border p-4 flex items-center justify-between ${streak > 0 ? 'border-black bg-black text-white' : 'border-gray-200 bg-gray-50'}`}>
-            <div className="flex items-center gap-3">
-              <Flame size={20} className={streak > 0 ? 'text-white' : 'text-gray-300'} />
-              <div>
-                <p className={`text-sm font-medium ${streak > 0 ? 'text-white' : 'text-gray-400'}`}>
-                  {streak > 0 ? `${streak} session streak` : 'No streak yet'}
-                </p>
-                <p className={`text-xs mt-0.5 ${streak > 0 ? 'text-gray-300' : 'text-gray-400'}`}>
-                  {totalSessions} total sessions completed
-                </p>
+        <div className="space-y-4">
+
+          {/* Today — workout + nutrition */}
+          <div className="grid grid-cols-2 gap-3">
+
+            {/* Workout card */}
+            <div className="border border-black p-3 flex flex-col gap-2 min-w-0">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-1.5 min-w-0">
+                  <Dumbbell size={13} strokeWidth={1.5} className="shrink-0" />
+                  <span className="text-xs font-medium text-gray-500 uppercase tracking-wide truncate">Workout</span>
+                </div>
+                {workout?.completed
+                  ? <CheckCircle2 size={13} className="text-black shrink-0" />
+                  : <span className="w-3 h-3 rounded-full border border-gray-300 shrink-0" />
+                }
               </div>
+
+              {workout ? (
+                <>
+                  <p className="text-sm font-semibold leading-tight">
+                    {SESSION_TYPES[workout.session_type]?.label ?? workout.session_type}
+                  </p>
+                  <div className="flex gap-0.5">
+                    {[1, 2, 3, 4, 5].map(n => (
+                      <div key={n} className={`h-1 flex-1 ${n <= (workout.energy_level || 0) ? 'bg-black' : 'bg-gray-100'}`} />
+                    ))}
+                  </div>
+                  <p className="text-xs text-gray-400">Energy {workout.energy_level}/5</p>
+                </>
+              ) : insights?.lastSession ? (
+                <>
+                  <div>
+                    <p className="text-[10px] text-gray-400 uppercase tracking-wide">Last session</p>
+                    <p className="text-sm font-semibold leading-tight mt-0.5">
+                      {SESSION_TYPES[insights.lastSession.session_type]?.label ?? insights.lastSession.session_type}
+                    </p>
+                  </div>
+                  <div className="flex gap-0.5">
+                    {[1, 2, 3, 4, 5].map(n => (
+                      <div key={n} className={`h-1 flex-1 ${n <= (insights.lastSession.energy_level || 0) ? 'bg-gray-300' : 'bg-gray-100'}`} />
+                    ))}
+                  </div>
+                  <p className="text-xs text-gray-400">{daysAgo(insights.lastSession.date)}</p>
+                </>
+              ) : (
+                <p className="text-sm text-gray-400 mt-auto">Nothing yet</p>
+              )}
             </div>
-            {streak > 0 && <span className="text-4xl font-bold tabular-nums">{streak}</span>}
+
+            {/* Nutrition card */}
+            <div className="border border-black p-3 flex flex-col gap-2 min-w-0">
+              <div className="flex items-center gap-1.5">
+                <UtensilsCrossed size={13} strokeWidth={1.5} className="shrink-0" />
+                <span className="text-xs font-medium text-gray-500 uppercase tracking-wide truncate">Nutrition</span>
+              </div>
+
+              {nutrition ? (
+                <>
+                  <div className="flex items-baseline gap-1">
+                    <span className="text-xl font-semibold tabular-nums">{totalCalories}</span>
+                    <span className="text-xs text-gray-400">kcal</span>
+                  </div>
+                  <div>
+                    <div className="flex justify-between text-xs">
+                      <span className="text-gray-500">Protein</span>
+                      <span className={`font-medium tabular-nums ${totalProtein >= proteinTarget ? 'text-black' : 'text-gray-400'}`}>
+                        {totalProtein}g
+                      </span>
+                    </div>
+                    <Bar value={totalProtein} max={proteinTarget} />
+                  </div>
+                  <div>
+                    <div className="flex justify-between text-xs">
+                      <span className="text-gray-500">Water</span>
+                      <span className={`font-medium tabular-nums ${(nutrition.water_l || 0) >= WATER_TARGET_L ? 'text-black' : 'text-gray-400'}`}>
+                        {nutrition.water_l || 0}L
+                      </span>
+                    </div>
+                    <Bar value={nutrition.water_l || 0} max={WATER_TARGET_L} />
+                  </div>
+                </>
+              ) : (
+                <p className="text-sm text-gray-400 mt-auto">Nothing yet</p>
+              )}
+            </div>
           </div>
 
-          {/* Weekly summary card */}
-          {weekSummary && (
-            <div className="border border-black p-4">
-              <div className="flex items-center gap-2 mb-3">
-                <BarChart2 size={18} />
-                <span className="font-medium">This Week</span>
-                <span className="text-xs text-gray-400 ml-auto">Mon – Sun</span>
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <WeekStat
-                  label="Sessions"
-                  value={`${weekSummary.completedThisWeek}/3`}
-                  ok={weekSummary.completedThisWeek >= 3}
-                  note={weekSummary.completedThisWeek >= 3 ? '✓ target hit' : `${3 - weekSummary.completedThisWeek} to go`}
-                />
-                <WeekStat
-                  label="Volume"
-                  value={weekSummary.totalVolume > 0 ? `${(weekSummary.totalVolume / 1000).toFixed(1)}t` : '–'}
-                  note="total kg lifted"
-                />
-                <WeekStat
-                  label="Avg Protein"
-                  value={weekSummary.avgProtein != null ? `${weekSummary.avgProtein}g` : '–'}
-                  ok={weekSummary.avgProtein >= proteinTarget}
-                  note={weekSummary.avgProtein != null
+          {/* Monthly activity calendar */}
+          <div className="border border-black p-4">
+            {/* Month nav */}
+            <div className="flex items-center justify-between mb-4">
+              <button
+                onClick={() => { setSelectedCell(null); setCalMonth(m => new Date(m.getFullYear(), m.getMonth() - 1, 1)) }}
+                className="p-1 text-gray-400 hover:text-black transition-colors"
+              >
+                <ChevronLeft size={16} />
+              </button>
+              <p className="text-xs font-medium text-gray-600 uppercase tracking-wide">
+                {calMonth.toLocaleDateString('en-AU', { month: 'long', year: 'numeric' })}
+              </p>
+              <button
+                onClick={() => { setSelectedCell(null); setCalMonth(m => new Date(m.getFullYear(), m.getMonth() + 1, 1)) }}
+                disabled={isCurrentMonth}
+                className="p-1 text-gray-400 hover:text-black transition-colors disabled:opacity-20"
+              >
+                <ChevronRight size={16} />
+              </button>
+            </div>
+
+            {/* Day headers */}
+            <div className="grid grid-cols-7 mb-1">
+              {['M','T','W','T','F','S','S'].map((l, i) => (
+                <div key={i} className="text-center text-[10px] text-gray-400 font-medium py-1">{l}</div>
+              ))}
+            </div>
+
+            {/* Calendar cells */}
+            <div className="grid grid-cols-7 gap-1">
+              {monthGrid.map((cell, i) =>
+                cell.isEmpty ? (
+                  <div key={i} />
+                ) : (
+                  <button
+                    key={i}
+                    onClick={() => !cell.isFuture && setSelectedCell(prev => prev === cell.date ? null : cell.date)}
+                    className={`aspect-square flex items-center justify-center text-xs font-medium transition-colors rounded-sm ${
+                      cell.isFuture
+                        ? 'text-gray-300 cursor-default'
+                        : cell.trained
+                        ? 'bg-black text-white'
+                        : cell.partial
+                        ? 'bg-gray-200 text-gray-600'
+                        : selectedCell === cell.date
+                        ? 'bg-gray-100 text-gray-800'
+                        : 'text-gray-500 hover:bg-gray-100'
+                    } ${cell.isToday && !cell.trained ? 'ring-1 ring-inset ring-black' : ''}`}
+                  >
+                    {cell.day}
+                  </button>
+                )
+              )}
+            </div>
+
+            {/* Popup for selected cell */}
+            {selectedCell && (() => {
+              const cell = monthGrid.find(c => !c.isEmpty && c.date === selectedCell)
+              if (!cell) return null
+              const dateLabel = new Date(selectedCell + 'T00:00:00').toLocaleDateString('en-AU', {
+                weekday: 'long', day: 'numeric', month: 'long',
+              })
+              return (
+                <div className="mt-3 border border-gray-200 bg-gray-50 p-3 text-xs">
+                  <p className="font-medium text-gray-700">{dateLabel}</p>
+                  {cell.session ? (
+                    <>
+                      <p className="text-gray-600 mt-0.5">
+                        {SESSION_TYPES[cell.session.session_type]?.label ?? cell.session.session_type}
+                        {cell.session.completed ? ' · completed' : ' · draft'}
+                      </p>
+                      {cell.session.energy_level != null && (
+                        <div className="flex gap-0.5 mt-2" style={{ width: 56 }}>
+                          {[1,2,3,4,5].map(n => (
+                            <div key={n} className={`h-1 flex-1 ${n <= cell.session.energy_level ? 'bg-gray-500' : 'bg-gray-200'}`} />
+                          ))}
+                        </div>
+                      )}
+                    </>
+                  ) : (
+                    <p className="text-gray-400 mt-0.5">Rest day</p>
+                  )}
+                </div>
+              )
+            })()}
+
+            {/* This-week summary */}
+            {isCurrentMonth && (
+              <p className="text-xs text-gray-500 mt-3">
+                <span className={`font-medium ${weekSummary?.completedThisWeek >= 3 ? 'text-black' : ''}`}>
+                  {weekSummary?.completedThisWeek ?? 0} / 3
+                </span>{' '}this week
+                {weekSummary?.totalVolume > 0 && (
+                  <> · <span className="font-medium text-black">{(weekSummary.totalVolume / 1000).toFixed(1)}t</span> lifted</>
+                )}
+              </p>
+            )}
+          </div>
+
+          {/* Weekly averages */}
+          {weekSummary && (weekSummary.avgProtein != null || weekSummary.avgCalories != null) && (
+            <div className="grid grid-cols-2 gap-px border border-black bg-black">
+              <div className="bg-white p-3">
+                <p className="text-xs text-gray-500 mb-0.5">Avg protein</p>
+                <p className="text-xl font-semibold tabular-nums">
+                  {weekSummary.avgProtein != null ? `${weekSummary.avgProtein}g` : '–'}
+                </p>
+                <p className={`text-xs mt-0.5 ${weekSummary.avgProtein >= proteinTarget ? 'text-black font-medium' : 'text-gray-400'}`}>
+                  {weekSummary.avgProtein != null
                     ? weekSummary.avgProtein >= proteinTarget ? '✓ on target' : `target ${proteinTarget}g`
                     : 'no data'}
-                />
-                <WeekStat
-                  label="Avg Calories"
-                  value={weekSummary.avgCalories != null ? weekSummary.avgCalories : '–'}
-                  note="per day"
-                />
+                </p>
+              </div>
+              <div className="bg-white p-3">
+                <p className="text-xs text-gray-500 mb-0.5">Avg calories</p>
+                <p className="text-xl font-semibold tabular-nums">
+                  {weekSummary.avgCalories != null ? weekSummary.avgCalories : '–'}
+                </p>
+                <p className="text-xs text-gray-400 mt-0.5">per day this week</p>
               </div>
             </div>
           )}
 
-          {/* Workout card */}
-          <div className="border border-black p-4">
-            <div className="flex items-start justify-between mb-3">
-              <div className="flex items-center gap-2">
-                <Dumbbell size={18} />
-                <span className="font-medium">Workout</span>
-              </div>
-              {workout?.completed ? (
-                <CheckCircle2 size={18} className="text-black" />
-              ) : (
-                <Circle size={18} className="text-gray-300" />
-              )}
-            </div>
-            {workout ? (
-              <div className="space-y-1">
-                <p className="text-sm font-medium">
-                  {SESSION_TYPES[workout.session_type]?.label ?? workout.session_type} — Energy {workout.energy_level}/5
-                </p>
-                <p className="text-xs text-gray-500">
-                  {workout.completed ? 'Session complete' : 'Session in progress'}
-                </p>
-              </div>
-            ) : (
-              <div className="space-y-2">
-                <p className="text-sm text-gray-500">No workout logged yet</p>
-                <Link to="/workout" className="inline-block bg-black text-white text-xs px-3 py-1.5 font-medium hover:bg-gray-900 transition-colors">
-                  Log workout
-                </Link>
-              </div>
-            )}
-          </div>
+          {/* Historical insights */}
+          <div className="border border-black p-4 space-y-5">
+            <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Trends</p>
 
-          {/* Nutrition card */}
-          <div className="border border-black p-4">
-            <div className="flex items-center gap-2 mb-3">
-              <UtensilsCrossed size={18} />
-              <span className="font-medium">Nutrition</span>
-            </div>
-            {nutrition ? (
-              <div className="space-y-2">
-                <div className="grid grid-cols-3 gap-3 text-center">
-                  <Stat label="Calories" value={totalCalories || '–'} />
-                  <Stat
-                    label="Protein (g)"
-                    value={totalProtein || '–'}
-                    note={totalProtein >= proteinTarget ? '✓ target' : `target ${proteinTarget}g`}
-                    ok={totalProtein >= proteinTarget}
-                  />
-                  <Stat
-                    label="Water (L)"
-                    value={nutrition.water_l || '–'}
-                    note={nutrition.water_l >= WATER_TARGET_L ? '✓ target' : `target ${WATER_TARGET_L}L`}
-                    ok={nutrition.water_l >= WATER_TARGET_L}
-                  />
+            {recentSessions.length === 0 ? (
+              <p className="text-sm text-gray-400">Log your first workout to see trends here.</p>
+            ) : (
+              <>
+                {/* 4-week consistency */}
+                <div>
+                  <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-3">4-week consistency</p>
+                  <div className="space-y-2">
+                    {insights.weeks.map((w, i) => (
+                      <div key={i} className="flex items-center gap-3">
+                        <span className="text-[11px] text-gray-400 w-16 shrink-0">{w.label}</span>
+                        <div className="flex gap-0.5 flex-1">
+                          {[1, 2, 3].map(n => (
+                            <div key={n} className={`h-2 flex-1 ${n <= w.count ? 'bg-black' : 'bg-gray-100'}`} />
+                          ))}
+                        </div>
+                        <span className={`text-[11px] tabular-nums w-8 text-right ${w.onTarget ? 'text-black font-semibold' : 'text-gray-400'}`}>
+                          {w.count}/3{w.onTarget ? ' ✓' : ''}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                  <p className="text-xs text-gray-400 mt-2.5">
+                    {insights.weeksOnTarget === 0
+                      ? 'No weeks on target yet'
+                      : `${insights.weeksOnTarget} of 4 weeks on target`}
+                  </p>
                 </div>
-                <Link to="/nutrition" className="inline-block text-xs text-gray-500 underline underline-offset-2 mt-1">
-                  Edit today's nutrition
-                </Link>
-              </div>
-            ) : (
-              <div className="space-y-2">
-                <p className="text-sm text-gray-500">No nutrition logged yet</p>
-                <Link to="/nutrition" className="inline-block bg-black text-white text-xs px-3 py-1.5 font-medium hover:bg-gray-900 transition-colors">
-                  Log nutrition
-                </Link>
-              </div>
+
+                {/* Session type mix */}
+                {insights.hasTypeMix && (
+                  <div>
+                    <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-3">
+                      Session mix <span className="normal-case font-normal text-gray-400">· last 90 days</span>
+                    </p>
+                    <div className="space-y-2">
+                      {[
+                        { key: 'upper', label: 'Upper' },
+                        { key: 'lower', label: 'Lower' },
+                        { key: 'full', label: 'Full' },
+                      ].map(({ key, label }) => (
+                        <div key={key} className="flex items-center gap-3">
+                          <span className="text-[11px] text-gray-500 w-10 shrink-0">{label}</span>
+                          <div className="flex-1 h-1.5 bg-gray-100">
+                            <div
+                              className="h-1.5 bg-black transition-all"
+                              style={{ width: `${Math.round(insights.typeCounts[key] / insights.maxTypeCount * 100)}%` }}
+                            />
+                          </div>
+                          <span className="text-[11px] tabular-nums text-gray-500 w-3 text-right">
+                            {insights.typeCounts[key]}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Average energy */}
+                {insights.avgEnergy != null && (
+                  <div>
+                    <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">
+                      Avg energy <span className="normal-case font-normal text-gray-400">· last 90 days</span>
+                    </p>
+                    <div className="flex items-center gap-3">
+                      <div className="flex gap-0.5 flex-1">
+                        {[1, 2, 3, 4, 5].map(n => (
+                          <div
+                            key={n}
+                            className={`h-2 flex-1 ${n <= Math.round(insights.avgEnergy) ? 'bg-black' : 'bg-gray-100'}`}
+                          />
+                        ))}
+                      </div>
+                      <span className="text-sm font-semibold tabular-nums">{insights.avgEnergy}/5</span>
+                    </div>
+                  </div>
+                )}
+              </>
             )}
           </div>
 
-          {/* Daily targets reminder */}
-          <div className="border border-gray-200 p-3 bg-gray-50">
-            <p className="text-xs text-gray-600">
-              Daily target: <span className="font-medium">{proteinTarget}g protein</span> ·{' '}
-              <span className="font-medium">{WATER_TARGET_L}L water</span>
-            </p>
-          </div>
         </div>
       )}
     </div>
   )
 }
 
-function Stat({ label, value, note, ok }) {
+function Bar({ value, max }) {
+  const pct = Math.min(100, max > 0 ? Math.round((value / max) * 100) : 0)
   return (
-    <div className="border border-gray-200 p-2">
-      <p className="text-xs text-gray-500 mb-0.5">{label}</p>
-      <p className="text-lg font-semibold leading-none">{value}</p>
-      {note && <p className={`text-xs mt-0.5 ${ok ? 'text-black' : 'text-gray-400'}`}>{note}</p>}
-    </div>
-  )
-}
-
-function WeekStat({ label, value, note, ok }) {
-  return (
-    <div className="bg-gray-50 p-3">
-      <p className="text-xs text-gray-500 mb-0.5">{label}</p>
-      <p className="text-xl font-semibold leading-tight">{value}</p>
-      {note && <p className={`text-xs mt-0.5 ${ok ? 'text-black font-medium' : 'text-gray-400'}`}>{note}</p>}
+    <div className="h-0.5 bg-gray-100 w-full mt-1">
+      <div className="h-0.5 bg-black transition-all" style={{ width: `${pct}%` }} />
     </div>
   )
 }

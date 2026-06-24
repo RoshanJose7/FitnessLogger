@@ -63,3 +63,13 @@ export const PROTEIN_TARGET_PER_KG = 1.6
 export const DEFAULT_BODYWEIGHT_KG = 75
 export const CALORIE_DEFICIT_TARGET = 350
 export const WATER_TARGET_L = 2.75
+
+export function calcStreakSimple(sessions) {
+  const sorted = [...sessions].sort((a, b) => (a.date < b.date ? 1 : -1))
+  let count = 0
+  for (const s of sorted) {
+    if (s.completed) count++
+    else break
+  }
+  return count
+}

@@ -152,7 +152,7 @@ export default function ScanLabelsModal({ isOpen, onClose, onConfirm }) {
     manualItems.some(r => r.food || r.calories || r.protein_g)
 
   return (
-    <div className="fixed inset-0 z-50 flex flex-col bg-white">
+    <div className="fixed inset-0 z-[60] flex flex-col bg-white">
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200">
         <h2 className="text-base font-semibold">Scan Nutrition Labels</h2>
