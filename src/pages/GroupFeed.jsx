@@ -1,17 +1,17 @@
 import { useState, useEffect } from 'react'
 import { ChevronLeft, ChevronRight, ArrowLeft, Flame } from 'lucide-react'
+import { motion, AnimatePresence } from 'framer-motion'
 import { supabase } from '../lib/supabase'
 import { SESSION_TYPES, calcStreakSimple } from '../lib/exercises'
 import { currentWeekRange, buildMonthGrid, buildInsights } from '../lib/insights'
-
-// ─── helpers ────────────────────────────────────────────────────────────────
+import { ease, spring } from '../lib/animations'
 
 function initials(name) {
   if (!name) return '?'
   return name.split(' ').map(p => p[0]).join('').slice(0, 2).toUpperCase()
 }
 
-// ─── MateCalendar — the detail panel shared between desktop + mobile ─────────
+// ─── MateCalendar ─────────────────────────────────────────────────────────────
 
 function MateCalendar({ sessions }) {
   const [calMonth, setCalMonth] = useState(() => {
@@ -36,39 +36,48 @@ function MateCalendar({ sessions }) {
 
   return (
     <div className="border border-black p-4">
-      {/* Month nav */}
       <div className="flex items-center justify-between mb-4">
-        <button onClick={prevMonth} className="p-1 text-gray-400 hover:text-black transition-colors">
+        <motion.button
+          onClick={prevMonth}
+          whileHover={{ scale: 1.15 }}
+          whileTap={{ scale: 0.9 }}
+          className="p-1 text-gray-400 hover:text-black transition-colors"
+        >
           <ChevronLeft size={16} />
-        </button>
+        </motion.button>
         <p className="text-xs font-medium text-gray-600 uppercase tracking-wide">
           {calMonth.toLocaleDateString('en-AU', { month: 'long', year: 'numeric' })}
         </p>
-        <button
+        <motion.button
           onClick={nextMonth}
           disabled={isCurrentMonth}
+          whileHover={{ scale: 1.15 }}
+          whileTap={{ scale: 0.9 }}
           className="p-1 text-gray-400 hover:text-black transition-colors disabled:opacity-20"
         >
           <ChevronRight size={16} />
-        </button>
+        </motion.button>
       </div>
 
-      {/* Day headers */}
       <div className="grid grid-cols-7 mb-1">
         {['M','T','W','T','F','S','S'].map((l, i) => (
           <div key={i} className="text-center text-[10px] text-gray-400 font-medium py-1">{l}</div>
         ))}
       </div>
 
-      {/* Cells */}
       <div className="grid grid-cols-7 gap-1">
         {monthGrid.map((cell, i) =>
           cell.isEmpty ? (
             <div key={i} />
           ) : (
-            <button
+            <motion.button
               key={i}
               onClick={() => !cell.isFuture && setSelectedCell(prev => prev === cell.date ? null : cell.date)}
+              whileHover={!cell.isFuture ? { scale: 1.12 } : {}}
+              whileTap={!cell.isFuture ? { scale: 0.9 } : {}}
+              initial={{ opacity: 0, scale: 0.5 }}
+              animate={{ opacity: 1, scale: 1 }}
+              transition={{ delay: i * 0.008, type: 'spring', stiffness: 400, damping: 22 }}
               className={`aspect-square flex items-center justify-center text-xs font-medium transition-colors rounded-sm ${
                 cell.isFuture
                   ? 'text-gray-300 cursor-default'
@@ -82,41 +91,48 @@ function MateCalendar({ sessions }) {
               } ${cell.isToday && !cell.trained ? 'ring-1 ring-inset ring-black' : ''}`}
             >
               {cell.day}
-            </button>
+            </motion.button>
           )
         )}
       </div>
 
-      {/* Popup */}
-      {selectedCell && (() => {
-        const cell = monthGrid.find(c => !c.isEmpty && c.date === selectedCell)
-        if (!cell) return null
-        const dateLabel = new Date(selectedCell + 'T00:00:00').toLocaleDateString('en-AU', {
-          weekday: 'long', day: 'numeric', month: 'long',
-        })
-        return (
-          <div className="mt-3 border border-gray-200 bg-gray-50 p-3 text-xs">
-            <p className="font-medium text-gray-700">{dateLabel}</p>
-            {cell.session ? (
-              <>
-                <p className="text-gray-600 mt-0.5">
-                  {SESSION_TYPES[cell.session.session_type]?.label ?? cell.session.session_type}
-                  {cell.session.completed ? ' · completed' : ' · draft'}
-                </p>
-                {cell.session.energy_level != null && (
-                  <div className="flex gap-0.5 mt-2" style={{ width: 56 }}>
-                    {[1,2,3,4,5].map(n => (
-                      <div key={n} className={`h-1 flex-1 ${n <= cell.session.energy_level ? 'bg-gray-500' : 'bg-gray-200'}`} />
-                    ))}
-                  </div>
-                )}
-              </>
-            ) : (
-              <p className="text-gray-400 mt-0.5">Rest day</p>
-            )}
-          </div>
-        )
-      })()}
+      <AnimatePresence>
+        {selectedCell && (() => {
+          const cell = monthGrid.find(c => !c.isEmpty && c.date === selectedCell)
+          if (!cell) return null
+          const dateLabel = new Date(selectedCell + 'T00:00:00').toLocaleDateString('en-AU', {
+            weekday: 'long', day: 'numeric', month: 'long',
+          })
+          return (
+            <motion.div
+              initial={{ opacity: 0, height: 0, y: -8 }}
+              animate={{ opacity: 1, height: 'auto', y: 0 }}
+              exit={{ opacity: 0, height: 0 }}
+              transition={{ duration: 0.25 }}
+              className="mt-3 border border-gray-200 bg-gray-50 p-3 text-xs overflow-hidden"
+            >
+              <p className="font-medium text-gray-700">{dateLabel}</p>
+              {cell.session ? (
+                <>
+                  <p className="text-gray-600 mt-0.5">
+                    {SESSION_TYPES[cell.session.session_type]?.label ?? cell.session.session_type}
+                    {cell.session.completed ? ' · completed' : ' · draft'}
+                  </p>
+                  {cell.session.energy_level != null && (
+                    <div className="flex gap-0.5 mt-2" style={{ width: 56 }}>
+                      {[1,2,3,4,5].map(n => (
+                        <div key={n} className={`h-1 flex-1 ${n <= cell.session.energy_level ? 'bg-gray-500' : 'bg-gray-200'}`} />
+                      ))}
+                    </div>
+                  )}
+                </>
+              ) : (
+                <p className="text-gray-400 mt-0.5">Rest day</p>
+              )}
+            </motion.div>
+          )
+        })()}
+      </AnimatePresence>
     </div>
   )
 }
@@ -139,22 +155,34 @@ function MateTrends({ sessions }) {
     <div className="border border-black p-4 space-y-5">
       <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Trends</p>
 
-      {/* 4-week consistency */}
       <div>
         <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-3">4-week consistency</p>
         <div className="space-y-2">
           {insights.weeks.map((w, i) => (
-            <div key={i} className="flex items-center gap-3">
+            <motion.div
+              key={i}
+              initial={{ opacity: 0, x: -16 }}
+              animate={{ opacity: 1, x: 0 }}
+              transition={{ delay: i * 0.07, duration: 0.35, ease }}
+              className="flex items-center gap-3"
+            >
               <span className="text-[11px] text-gray-400 w-16 shrink-0">{w.label}</span>
               <div className="flex gap-0.5 flex-1">
                 {[1,2,3].map(n => (
-                  <div key={n} className={`h-2 flex-1 ${n <= w.count ? 'bg-black' : 'bg-gray-100'}`} />
+                  <motion.div
+                    key={n}
+                    initial={{ scaleX: 0 }}
+                    animate={{ scaleX: 1 }}
+                    transition={{ delay: 0.15 + i * 0.07 + n * 0.05, duration: 0.3 }}
+                    style={{ originX: 0 }}
+                    className={`h-2 flex-1 ${n <= w.count ? 'bg-black' : 'bg-gray-100'}`}
+                  />
                 ))}
               </div>
               <span className={`text-[11px] tabular-nums w-8 text-right ${w.onTarget ? 'text-black font-semibold' : 'text-gray-400'}`}>
                 {w.count}/3{w.onTarget ? ' ✓' : ''}
               </span>
-            </div>
+            </motion.div>
           ))}
         </div>
         <p className="text-xs text-gray-400 mt-2.5">
@@ -164,7 +192,6 @@ function MateTrends({ sessions }) {
         </p>
       </div>
 
-      {/* Session type mix */}
       {insights.hasTypeMix && (
         <div>
           <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-3">
@@ -175,13 +202,15 @@ function MateTrends({ sessions }) {
               { key: 'upper', label: 'Upper' },
               { key: 'lower', label: 'Lower' },
               { key: 'full',  label: 'Full'  },
-            ].map(({ key, label }) => (
+            ].map(({ key, label }, i) => (
               <div key={key} className="flex items-center gap-3">
                 <span className="text-[11px] text-gray-500 w-10 shrink-0">{label}</span>
                 <div className="flex-1 h-1.5 bg-gray-100">
-                  <div
-                    className="h-1.5 bg-black transition-all"
-                    style={{ width: `${Math.round(insights.typeCounts[key] / insights.maxTypeCount * 100)}%` }}
+                  <motion.div
+                    className="h-1.5 bg-black"
+                    initial={{ width: 0 }}
+                    animate={{ width: `${Math.round(insights.typeCounts[key] / insights.maxTypeCount * 100)}%` }}
+                    transition={{ delay: 0.1 + i * 0.1, duration: 0.65, ease: [0.25, 0.1, 0.25, 1] }}
                   />
                 </div>
                 <span className="text-[11px] tabular-nums text-gray-500 w-3 text-right">
@@ -193,7 +222,6 @@ function MateTrends({ sessions }) {
         </div>
       )}
 
-      {/* Avg energy */}
       {insights.avgEnergy != null && (
         <div>
           <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">
@@ -202,7 +230,14 @@ function MateTrends({ sessions }) {
           <div className="flex items-center gap-3">
             <div className="flex gap-0.5 flex-1">
               {[1,2,3,4,5].map(n => (
-                <div key={n} className={`h-2 flex-1 ${n <= Math.round(insights.avgEnergy) ? 'bg-black' : 'bg-gray-100'}`} />
+                <motion.div
+                  key={n}
+                  initial={{ scaleX: 0 }}
+                  animate={{ scaleX: 1 }}
+                  transition={{ delay: 0.2 + n * 0.07, duration: 0.35 }}
+                  style={{ originX: 0 }}
+                  className={`h-2 flex-1 ${n <= Math.round(insights.avgEnergy) ? 'bg-black' : 'bg-gray-100'}`}
+                />
               ))}
             </div>
             <span className="text-sm font-semibold tabular-nums">{insights.avgEnergy}/5</span>
@@ -213,64 +248,96 @@ function MateTrends({ sessions }) {
   )
 }
 
-// ─── MateDetail — calendar + trends for a selected user ──────────────────────
+// ─── MateDetail ──────────────────────────────────────────────────────────────
 
 function MateDetail({ name, streak, sessions, onBack }) {
   const [weekStart, weekEnd] = currentWeekRange()
   const weekCount = sessions.filter(s => s.completed && s.date >= weekStart && s.date <= weekEnd).length
 
   return (
-    <div className="space-y-4">
-      {/* Mobile back button — hidden on desktop */}
+    <motion.div
+      initial={{ opacity: 0, x: 32 }}
+      animate={{ opacity: 1, x: 0 }}
+      exit={{ opacity: 0, x: -24 }}
+      transition={{ duration: 0.32, ease }}
+      className="space-y-4"
+    >
       <div className="md:hidden flex items-center gap-3">
-        <button
+        <motion.button
           onClick={onBack}
+          whileHover={{ x: -3 }}
+          whileTap={{ scale: 0.93 }}
+          transition={spring}
           className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-black transition-colors"
         >
           <ArrowLeft size={16} />
           Mates
-        </button>
+        </motion.button>
       </div>
 
-      {/* Header */}
       <div className="flex items-baseline justify-between">
-        <h2 className="text-xl font-semibold tracking-tight">{name}</h2>
-        <div className="flex items-center gap-3 text-sm text-gray-500">
+        <motion.h2
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.08 }}
+          className="text-xl font-semibold tracking-tight"
+        >
+          {name}
+        </motion.h2>
+        <motion.div
+          initial={{ opacity: 0, x: 10 }}
+          animate={{ opacity: 1, x: 0 }}
+          transition={{ delay: 0.12 }}
+          className="flex items-center gap-3 text-sm text-gray-500"
+        >
           <span className={`tabular-nums font-medium ${weekCount >= 3 ? 'text-black' : ''}`}>
             {weekCount}/3 this week
           </span>
           {streak > 0 && (
-            <span className="flex items-center gap-1 text-black font-semibold">
+            <motion.span
+              initial={{ scale: 0 }}
+              animate={{ scale: 1 }}
+              transition={{ type: 'spring', stiffness: 500, damping: 20, delay: 0.2 }}
+              className="flex items-center gap-1 text-black font-semibold"
+            >
               <Flame size={14} />
               {streak}
-            </span>
+            </motion.span>
           )}
-        </div>
+        </motion.div>
       </div>
 
       <MateCalendar sessions={sessions} />
       <MateTrends sessions={sessions} />
-    </div>
+    </motion.div>
   )
 }
 
-// ─── FriendCard — one row in the mobile list / sidebar ───────────────────────
+// ─── FriendCard ──────────────────────────────────────────────────────────────
 
 function FriendCard({ name, streak, weekCount, isSelected, onClick }) {
   return (
-    <button
+    <motion.button
       onClick={onClick}
-      className={`w-full text-left border border-black p-3 transition-colors ${
-        isSelected ? 'bg-black text-white' : 'hover:bg-gray-50'
-      }`}
+      whileHover={{ x: 3 }}
+      whileTap={{ scale: 0.98 }}
+      animate={{
+        backgroundColor: isSelected ? '#1c1c1c' : '#ffffff',
+        color: isSelected ? '#f5f5f2' : '#1c1c1c',
+      }}
+      transition={spring}
+      className="w-full text-left border border-black p-3"
     >
       <div className="flex items-center gap-3">
-        {/* Avatar */}
-        <div className={`shrink-0 w-8 h-8 border flex items-center justify-center text-xs font-semibold ${
-          isSelected ? 'border-white' : 'border-black'
-        }`}>
+        <motion.div
+          animate={{
+            borderColor: isSelected ? '#f5f5f2' : '#1c1c1c',
+          }}
+          transition={spring}
+          className="shrink-0 w-8 h-8 border flex items-center justify-center text-xs font-semibold"
+        >
           {initials(name)}
-        </div>
+        </motion.div>
         <div className="flex-1 min-w-0">
           <p className="text-sm font-semibold truncate">{name}</p>
           <p className={`text-xs tabular-nums mt-0.5 ${
@@ -282,14 +349,19 @@ function FriendCard({ name, streak, weekCount, isSelected, onClick }) {
           </p>
         </div>
         {streak > 0 && (
-          <span className={`shrink-0 flex items-center gap-0.5 text-xs font-semibold ${isSelected ? 'text-white' : ''}`}>
+          <motion.span
+            initial={{ scale: 0.7, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            transition={spring}
+            className={`shrink-0 flex items-center gap-0.5 text-xs font-semibold ${isSelected ? 'text-white' : ''}`}
+          >
             <Flame size={12} />
             {streak}
-          </span>
+          </motion.span>
         )}
         <ChevronRight size={14} className={`shrink-0 md:hidden ${isSelected ? 'text-gray-400' : 'text-gray-300'}`} />
       </div>
-    </button>
+    </motion.button>
   )
 }
 
@@ -320,7 +392,6 @@ export default function GroupFeed({ session }) {
       setProfiles(profileMap)
       setAllSessions(sessionData || [])
 
-      // Pre-select the first mate (everyone except current user)
       const firstMate = (profileList || []).find(p => p.id !== session.user.id)
       if (firstMate) setSelectedUserId(firstMate.id)
 
@@ -333,7 +404,13 @@ export default function GroupFeed({ session }) {
     return (
       <div className="space-y-3">
         {[1,2,3].map(i => (
-          <div key={i} className="h-16 border border-gray-200 animate-pulse bg-gray-50" />
+          <motion.div
+            key={i}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ delay: i * 0.08 }}
+            className="h-16 border border-gray-200 animate-pulse bg-gray-50"
+          />
         ))}
       </div>
     )
@@ -342,7 +419,6 @@ export default function GroupFeed({ session }) {
   const [weekStart, weekEnd] = currentWeekRange()
   const myId = session.user.id
 
-  // Build friend list from all profiles, excluding the current user
   const friends = Object.entries(profiles)
     .filter(([uid]) => uid !== myId)
     .map(([uid, name]) => {
@@ -357,78 +433,140 @@ export default function GroupFeed({ session }) {
 
   if (friends.length === 0) {
     return (
-      <div className="space-y-4">
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.4, ease }}
+        className="space-y-4"
+      >
         <h1 className="text-2xl font-semibold tracking-tight">Mates</h1>
         <p className="text-sm text-gray-400">No mates yet. Invite friends to join and their activity will show up here.</p>
-      </div>
+      </motion.div>
     )
   }
 
   return (
-    <div>
+    <motion.div
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: -12, transition: { duration: 0.18 } }}
+      transition={{ duration: 0.3, ease }}
+    >
       {/* Mobile: single-column, two states */}
       <div className="md:hidden">
-        {selected ? (
-          <MateDetail
-            name={selected.name}
-            streak={selected.streak}
-            sessions={selected.sessions}
-            onBack={() => setSelectedUserId(null)}
-          />
-        ) : (
-          <div className="space-y-4">
-            <h1 className="text-2xl font-semibold tracking-tight">Mates</h1>
-            <div className="space-y-2">
-              {friends.map(f => (
-                <FriendCard
-                  key={f.uid}
-                  name={f.name}
-                  streak={f.streak}
-                  weekCount={f.weekCount}
-                  isSelected={false}
-                  onClick={() => setSelectedUserId(f.uid)}
-                />
-              ))}
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* Desktop: two-column */}
-      <div className="hidden md:grid md:grid-cols-[200px_1fr] gap-6">
-        {/* Sidebar */}
-        <div className="space-y-4">
-          <h1 className="text-2xl font-semibold tracking-tight">Mates</h1>
-          <div className="space-y-2">
-            {friends.map(f => (
-              <FriendCard
-                key={f.uid}
-                name={f.name}
-                streak={f.streak}
-                weekCount={f.weekCount}
-                isSelected={selectedUserId === f.uid}
-                onClick={() => setSelectedUserId(f.uid)}
-              />
-            ))}
-          </div>
-        </div>
-
-        {/* Detail panel */}
-        <div>
+        <AnimatePresence mode="wait">
           {selected ? (
             <MateDetail
+              key={selectedUserId}
               name={selected.name}
               streak={selected.streak}
               sessions={selected.sessions}
               onBack={() => setSelectedUserId(null)}
             />
           ) : (
-            <div className="flex items-center justify-center h-48 border border-dashed border-gray-200 text-sm text-gray-400">
-              Select a mate to see their activity
-            </div>
+            <motion.div
+              key="list"
+              initial={{ opacity: 0, x: -32 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: 32 }}
+              transition={{ duration: 0.3, ease }}
+              className="space-y-4"
+            >
+              <motion.h1
+                initial={{ opacity: 0, y: 12 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="text-2xl font-semibold tracking-tight"
+              >
+                Mates
+              </motion.h1>
+              <motion.div
+                className="space-y-2"
+                initial="initial"
+                animate="animate"
+                variants={{ animate: { transition: { staggerChildren: 0.08, delayChildren: 0.1 } } }}
+              >
+                {friends.map(f => (
+                  <motion.div
+                    key={f.uid}
+                    variants={{
+                      initial: { opacity: 0, y: 16 },
+                      animate: { opacity: 1, y: 0, transition: { duration: 0.35, ease } },
+                    }}
+                  >
+                    <FriendCard
+                      name={f.name}
+                      streak={f.streak}
+                      weekCount={f.weekCount}
+                      isSelected={false}
+                      onClick={() => setSelectedUserId(f.uid)}
+                    />
+                  </motion.div>
+                ))}
+              </motion.div>
+            </motion.div>
           )}
+        </AnimatePresence>
+      </div>
+
+      {/* Desktop: two-column */}
+      <div className="hidden md:grid md:grid-cols-[200px_1fr] gap-6">
+        <motion.div
+          className="space-y-4"
+          initial="initial"
+          animate="animate"
+          variants={{ animate: { transition: { staggerChildren: 0.09, delayChildren: 0.05 } } }}
+        >
+          <motion.h1
+            variants={{ initial: { opacity: 0, y: 12 }, animate: { opacity: 1, y: 0 } }}
+            className="text-2xl font-semibold tracking-tight"
+          >
+            Mates
+          </motion.h1>
+          <div className="space-y-2">
+            {friends.map(f => (
+              <motion.div
+                key={f.uid}
+                variants={{
+                  initial: { opacity: 0, x: -16 },
+                  animate: { opacity: 1, x: 0, transition: { duration: 0.35, ease } },
+                }}
+              >
+                <FriendCard
+                  name={f.name}
+                  streak={f.streak}
+                  weekCount={f.weekCount}
+                  isSelected={selectedUserId === f.uid}
+                  onClick={() => setSelectedUserId(f.uid)}
+                />
+              </motion.div>
+            ))}
+          </div>
+        </motion.div>
+
+        <div>
+          <AnimatePresence mode="wait">
+            {selected ? (
+              <MateDetail
+                key={selectedUserId}
+                name={selected.name}
+                streak={selected.streak}
+                sessions={selected.sessions}
+                onBack={() => setSelectedUserId(null)}
+              />
+            ) : (
+              <motion.div
+                key="empty"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                className="flex items-center justify-center h-48 border border-dashed border-gray-200 text-sm text-gray-400"
+              >
+                Select a mate to see their activity
+              </motion.div>
+            )}
+          </AnimatePresence>
         </div>
       </div>
-    </div>
+    </motion.div>
   )
 }

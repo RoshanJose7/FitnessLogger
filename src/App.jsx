@@ -1,5 +1,6 @@
 import { useEffect, useState, lazy, Suspense } from 'react'
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom'
+import { AnimatePresence } from 'framer-motion'
 import { supabase } from './lib/supabase'
 import Layout from './components/Layout'
 import ProtectedRoute from './components/ProtectedRoute'
@@ -14,6 +15,33 @@ import GroupFeed from './pages/GroupFeed'
 import './index.css'
 
 const History = lazy(() => import('./pages/History'))
+
+// AnimatePresence must live inside BrowserRouter so useLocation works.
+// Passing `location` to <Routes> freezes the old route in the tree while
+// its exit animation plays — without this, children update immediately and
+// the user sees the new page animate out then back in.
+function AppRoutes({ session }) {
+  const location = useLocation()
+  return (
+    <AnimatePresence mode="wait" initial={false}>
+      <Routes location={location} key={location.pathname}>
+        <Route path="/" element={<Dashboard session={session} />} />
+        <Route path="workout" element={<WorkoutLog session={session} />} />
+        <Route path="nutrition" element={<NutritionLog session={session} />} />
+        <Route path="history" element={
+          <Suspense fallback={
+            <div className="space-y-3">
+              {[1, 2, 3].map(i => <div key={i} className="h-16 border border-gray-200 animate-pulse bg-gray-50" />)}
+            </div>
+          }>
+            <History session={session} />
+          </Suspense>
+        } />
+        <Route path="group" element={<GroupFeed session={session} />} />
+      </Routes>
+    </AnimatePresence>
+  )
+}
 
 const Spinner = () => (
   <div className="min-h-dvh flex items-center justify-center">
@@ -77,17 +105,7 @@ export default function App() {
             element={
               <ProtectedRoute session={session}>
                 <Layout session={session}>
-                  <Routes>
-                    <Route path="/" element={<Dashboard session={session} />} />
-                    <Route path="workout" element={<WorkoutLog session={session} />} />
-                    <Route path="nutrition" element={<NutritionLog session={session} />} />
-                    <Route path="history" element={
-                      <Suspense fallback={HistoryFallback}>
-                        <History session={session} />
-                      </Suspense>
-                    } />
-                    <Route path="group" element={<GroupFeed session={session} />} />
-                  </Routes>
+                  <AppRoutes session={session} />
                 </Layout>
               </ProtectedRoute>
             }
