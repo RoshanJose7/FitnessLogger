@@ -374,7 +374,7 @@ export default function History({ session }) {
                         stroke="#000000"
                         strokeWidth={2}
                         dot={<CustomDot data={chartData} />}
-                        activeDot={{ r: 5, fill: '#000', stroke: '#fff', strokeWidth: 2 }}
+                        activeDot={{ r: 5, fill: '#000', stroke: '#fff', strokeWidth: 2, cursor: 'pointer' }}
                       />
                     </LineChart>
                   </ResponsiveContainer>
@@ -428,8 +428,8 @@ function PRBadge({ data }) {
 function CustomDot({ cx, cy, payload, data }) {
   const max = Math.max(...(data || []).map(d => d.weight))
   const isPR = payload?.weight === max
-  if (isPR) return <circle cx={cx} cy={cy} r={5} fill="#000" stroke="#fff" strokeWidth={2} />
-  return <circle cx={cx} cy={cy} r={3} fill="#000" />
+  if (isPR) return <circle cx={cx} cy={cy} r={5} fill="#000" stroke="#fff" strokeWidth={2} style={{ cursor: 'pointer' }} />
+  return <circle cx={cx} cy={cy} r={3} fill="#000" style={{ cursor: 'pointer' }} />
 }
 
 function CustomTooltip({ active, payload }) {

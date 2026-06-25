@@ -62,8 +62,8 @@ export default function Layout({ children, session }) {
       {/* Desktop top nav */}
       <header className="hidden md:flex items-center justify-between px-6 py-4 border-b border-black sticky top-0 bg-white z-50">
         <div className="flex items-center gap-4">
-          <Link to="/app" className="font-semibold tracking-tight text-lg hover:opacity-70 transition-opacity">
-            Fitness Logger
+          <Link to="/app" className="font-bold tracking-tight text-lg hover:opacity-70 transition-opacity">
+            Zenith
           </Link>
           <FlameChip streak={streak} />
         </div>
@@ -95,7 +95,7 @@ export default function Layout({ children, session }) {
 
       {/* Mobile top bar */}
       <header className="md:hidden flex items-center justify-between px-4 py-3 border-b border-black sticky top-0 bg-white z-50">
-        <span className="font-semibold tracking-tight">Fitness Logger</span>
+        <span className="font-bold tracking-tight">Zenith</span>
         <div className="flex items-center gap-3">
           <FlameChip streak={streak} />
           <button

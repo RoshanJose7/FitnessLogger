@@ -26,7 +26,7 @@ export default function Login() {
     <div className="min-h-dvh flex items-center justify-center px-4 bg-white">
       <div className="w-full max-w-sm">
         <div className="mb-10">
-          <h1 className="text-2xl font-semibold tracking-tight mb-1">Fitness Logger</h1>
+          <h1 className="text-2xl font-semibold tracking-tight mb-1">Zenith</h1>
           <p className="text-sm text-gray-500">Sign in to your account</p>
         </div>
 

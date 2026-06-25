@@ -57,7 +57,7 @@ export default function Landing() {
 
       {/* ── Nav ── */}
       <header className="border-b border-black px-6 py-4 flex items-center justify-between sticky top-0 bg-white z-50">
-        <span className="text-sm font-semibold tracking-tight">Fitness Logger</span>
+        <span className="text-sm font-bold tracking-tight">Zenith</span>
         <div className="flex items-center gap-6">
           <span className="hidden sm:inline text-xs tracking-widest uppercase text-gray-400">Private beta</span>
           <Link
@@ -133,7 +133,7 @@ export default function Landing() {
               You don't need a social feed. You don't need streaks gamified into dopamine loops. You don't need AI-generated workout plans based on your "goals." You need a fast, reliable place to record what you did, track what you ate, and see if the numbers are moving.
             </p>
             <p>
-              Fitness Logger was built for a small group of people who already know what they're doing — they just needed a tool that didn't get in the way. It's still that. It's not trying to be anything else.
+              Zenith was built for a small group of people who already know what they're doing — they just needed a tool that didn't get in the way. It's still that. It's not trying to be anything else.
             </p>
           </div>
         </div>
@@ -201,7 +201,7 @@ export default function Landing() {
             Interested?
           </h2>
           <p className="text-gray-400 text-sm leading-relaxed mb-10 max-w-sm mx-auto">
-            Fitness Logger isn't open to the public yet. When it is, you'll be able to sign up here. For now, sit tight.
+            Zenith isn't open to the public yet. When it is, you'll be able to sign up here. For now, sit tight.
           </p>
           <div className="inline-block border border-white/20 px-10 py-4 text-sm text-gray-500 cursor-default">
             Coming soon
@@ -216,7 +216,7 @@ export default function Landing() {
 
       {/* ── Footer ── */}
       <footer className="px-6 py-5 flex items-center justify-between">
-        <span className="text-xs text-gray-400 font-medium tracking-tight">Fitness Logger</span>
+        <span className="text-xs text-gray-400 font-medium tracking-tight">Zenith</span>
         <span className="text-xs text-gray-300">Private beta · {new Date().getFullYear()}</span>
       </footer>
 
